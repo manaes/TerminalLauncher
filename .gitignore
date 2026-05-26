@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.pins
+Package.resolved
+
+# Agent tooling artifacts (not part of the project)
+.claude/
+.claude-flow/
+.ruflo/
+.swarm/
+.mcp.json
+ruvector.db
+*.db-journal
+
+# Editor
+.idea/
+.vscode/
