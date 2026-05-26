@@ -45,18 +45,24 @@ struct ITermLauncher: Launcher {
             shellCommand = TerminalLauncher.buildShellCommand(path: resolvedPath, commands: prepared.commands)
 
         case .remoteSSH:
-            // SSH 셸 명령은 TerminalLauncher 헬퍼를 그대로 재사용.
-            // 다만 iTerm2 자동 입력 모드에서는 클립보드 안내 echo 를 제거해야 깔끔하다.
-            // → 자동 입력 모드면 prepareSshShellCommand 결과의 prefix echo 를 제거하지 않고
-            //   그대로 두되, password 는 별도로 자동 입력 변수에 보관해 delay 뒤 write text 한다.
+            // SSH 셸 명령은 TerminalLauncher 헬퍼를 재사용하되, iTerm2 에선 안내 echo 는 항상 끈다.
+            // - 자동 입력 ON : 패스워드는 AppleScript write text 로 입력. 클립보드/echo 모두 X.
+            // - 자동 입력 OFF: 패스워드만 클립보드에 복사해 사용자가 ⌘V. echo 안내는 여전히 X
+            //   (iTerm2 새 창에 안내 줄이 떠 있으면 어색하다).
             let auth = entry.auth ?? .password
-            if prefs.itermAutoTypePassword,
+            let autoType = prefs.itermAutoTypePassword
+            if autoType,
                auth == .password,
                let pw = entry.password,
                !pw.isEmpty {
                 autoTypePassword = pw
             }
-            shellCommand = try TerminalLauncher.prepareSshShellCommand(entry: entry, attachmentStore: attachmentStore)
+            shellCommand = try TerminalLauncher.prepareSshShellCommand(
+                entry: entry,
+                attachmentStore: attachmentStore,
+                copyPasswordToClipboard: !autoType,
+                includeEchoLine: false
+            )
 
         case .remoteVNC:
             // VNC 는 NSWorkspace 가 처리. iTerm 백엔드와도 무관.

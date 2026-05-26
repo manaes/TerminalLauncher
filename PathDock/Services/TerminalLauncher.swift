@@ -121,10 +121,19 @@ enum TerminalLauncher {
         try runAppleScript(script)
     }
 
-    /// SSH 항목을 Terminal 에서 실행할 단일 셸 명령 문자열로 합성한다.
-    /// - returns: `echo '...' && ssh user@host -p port [-i key]` 형태
+    /// SSH 항목을 Terminal/iTerm2 에서 실행할 단일 셸 명령 문자열로 합성한다.
+    /// - parameter copyPasswordToClipboard: password 모드일 때 패스워드를 NSPasteboard 에 자동 복사할지 여부.
+    ///   iTerm2 자동 입력 모드에서는 false (불필요).
+    /// - parameter includeEchoLine: ssh 실행 직전에 안내 echo 줄을 합성할지 여부.
+    ///   iTerm2 는 자동 입력 또는 별도 트레이를 사용하므로 안내 줄이 노이즈라 false.
+    /// - returns: `[echo '...' &&] ssh user@host -p port [-i key]` 형태
     @MainActor
-    static func prepareSshShellCommand(entry: PathEntry, attachmentStore: AttachmentStore) throws -> String {
+    static func prepareSshShellCommand(
+        entry: PathEntry,
+        attachmentStore: AttachmentStore,
+        copyPasswordToClipboard: Bool = true,
+        includeEchoLine: Bool = true
+    ) throws -> String {
         // 1) host 검증
         let host = (entry.host ?? "").trimmingCharacters(in: .whitespaces)
         guard !host.isEmpty else {
@@ -174,12 +183,14 @@ enum TerminalLauncher {
             keyfileArg = target.path
 
         case .password:
-            // 패스워드 자동 클립보드 복사 (있을 때만)
-            if let pw = entry.password, !pw.isEmpty {
+            // 패스워드 자동 클립보드 복사 (옵션, 있을 때만)
+            if copyPasswordToClipboard, let pw = entry.password, !pw.isEmpty {
                 let pb = NSPasteboard.general
                 pb.clearContents()
                 pb.setString(pw, forType: .string)
-                prefixEchoLine = "echo '🔑 패스워드가 클립보드에 복사되었습니다. 프롬프트에서 ⌘V 로 붙여넣으세요.'"
+                if includeEchoLine {
+                    prefixEchoLine = "echo '🔑 패스워드가 클립보드에 복사되었습니다. 프롬프트에서 ⌘V 로 붙여넣으세요.'"
+                }
             }
         }
 
