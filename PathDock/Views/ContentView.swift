@@ -145,7 +145,15 @@ struct ContentView: View {
 
     private func launch(_ entry: PathEntry) {
         do {
-            try TerminalLauncher.launch(entry, attachmentStore: store.attachmentStore)
+            // entry.kind 에 따라 적절한 런처로 위임
+            switch entry.kind {
+            case .command:
+                try TerminalLauncher.launch(entry, attachmentStore: store.attachmentStore)
+            case .remoteSSH:
+                try TerminalLauncher.launchSSH(entry, attachmentStore: store.attachmentStore)
+            case .remoteVNC:
+                try RemoteLauncher.launchVNC(entry)
+            }
         } catch let err as LaunchError {
             launchError = IdentifiableError(message: err.errorDescription ?? "알 수 없는 오류")
         } catch {

@@ -544,6 +544,146 @@ describe("pathdock 포맷: magic / version / 헤더 길이") {
     expectEqual(validatePathdockVersion(v258Bytes), 258, "LE 16-bit 디코드(0x0102 = 258)")
 }
 
+// MARK: - SSH 셸 명령 / VNC URL Mirror (kind 분기 도입 후 추가)
+
+/// TerminalLauncher.prepareSshShellCommand 의 순수 부분 미러.
+/// 키파일 모드일 때 평문 풀기 / 클립보드 복사 같은 부수효과는 제외하고
+/// 셸 합성 결과만 검증한다.
+func buildSshCommandMirror(
+    host: String,
+    port: Int?,
+    username: String?,
+    keyPath: String?,
+    pwEchoLine: String?
+) -> String {
+    let userHost: String
+    if let u = username, !u.isEmpty {
+        userHost = "\(u)@\(host)"
+    } else {
+        userHost = host
+    }
+    var parts: [String] = ["ssh", "'\(TerminalLauncherMirror.shellEscapeSingleQuoted(userHost))'"]
+    parts.append("-p")
+    parts.append(String(port ?? 22))
+    if let k = keyPath {
+        parts.append("-i")
+        parts.append("'\(TerminalLauncherMirror.shellEscapeSingleQuoted(k))'")
+    }
+    let ssh = parts.joined(separator: " ")
+    if let echo = pwEchoLine {
+        return "\(echo) && \(ssh)"
+    }
+    return ssh
+}
+
+describe("buildSshCommand: 기본") {
+    expectEqual(
+        buildSshCommandMirror(host: "server.example.com", port: nil, username: nil, keyPath: nil, pwEchoLine: nil),
+        "ssh 'server.example.com' -p 22",
+        "host 만 있을 때 기본 포트 22"
+    )
+    expectEqual(
+        buildSshCommandMirror(host: "1.2.3.4", port: 2222, username: "ubuntu", keyPath: nil, pwEchoLine: nil),
+        "ssh 'ubuntu@1.2.3.4' -p 2222",
+        "user + host + custom port"
+    )
+}
+
+describe("buildSshCommand: 키파일") {
+    expectEqual(
+        buildSshCommandMirror(host: "h", port: 22, username: "u", keyPath: "/tmp/run/id_rsa", pwEchoLine: nil),
+        "ssh 'u@h' -p 22 -i '/tmp/run/id_rsa'",
+        "키파일 경로가 -i 인자로 추가"
+    )
+    expectEqual(
+        buildSshCommandMirror(host: "h", port: 22, username: "u", keyPath: "/tmp/run dir/id with space", pwEchoLine: nil),
+        "ssh 'u@h' -p 22 -i '/tmp/run dir/id with space'",
+        "공백 포함 키 경로는 작은따옴표로 감쌈"
+    )
+    expectEqual(
+        buildSshCommandMirror(host: "h", port: 22, username: "u", keyPath: "/tmp/don't.key", pwEchoLine: nil),
+        "ssh 'u@h' -p 22 -i '/tmp/don'\\''t.key'",
+        "작은따옴표 포함 키 경로는 escape"
+    )
+}
+
+describe("buildSshCommand: 패스워드 모드 안내 echo") {
+    let echo = "echo '🔑 패스워드가 클립보드에 복사되었습니다. 프롬프트에서 ⌘V 로 붙여넣으세요.'"
+    expectEqual(
+        buildSshCommandMirror(host: "h", port: nil, username: "u", keyPath: nil, pwEchoLine: echo),
+        "\(echo) && ssh 'u@h' -p 22",
+        "패스워드 안내 echo 가 ssh 앞에 && 로 연결"
+    )
+    // 패스워드 비어 있을 땐 echo 없음
+    expectEqual(
+        buildSshCommandMirror(host: "h", port: nil, username: "u", keyPath: nil, pwEchoLine: nil),
+        "ssh 'u@h' -p 22",
+        "패스워드 없으면 ssh 만"
+    )
+}
+
+/// VNC URL Mirror — RemoteLauncher 와 동일한 percent-encoding 규칙
+func buildVncURLMirror(host: String, port: Int?, username: String?, password: String?) -> String? {
+    let trimmedHost = host.trimmingCharacters(in: .whitespaces)
+    guard !trimmedHost.isEmpty else { return nil }
+    let safe = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+    let user = (username ?? "").trimmingCharacters(in: .whitespaces)
+    let pw = password ?? ""
+    var userInfo = ""
+    if !user.isEmpty {
+        let u = user.addingPercentEncoding(withAllowedCharacters: safe) ?? user
+        if !pw.isEmpty {
+            let p = pw.addingPercentEncoding(withAllowedCharacters: safe) ?? pw
+            userInfo = "\(u):\(p)@"
+        } else {
+            userInfo = "\(u)@"
+        }
+    } else if !pw.isEmpty {
+        let p = pw.addingPercentEncoding(withAllowedCharacters: safe) ?? pw
+        userInfo = ":\(p)@"
+    }
+    let hostEncoded = trimmedHost.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? trimmedHost
+    var s = "vnc://\(userInfo)\(hostEncoded)"
+    if let p = port { s += ":\(p)" }
+    return s
+}
+
+describe("buildVncURL: 기본") {
+    expectEqual(
+        buildVncURLMirror(host: "192.168.0.10", port: nil, username: nil, password: nil),
+        "vnc://192.168.0.10",
+        "host 만"
+    )
+    expectEqual(
+        buildVncURLMirror(host: "mac.local", port: 5900, username: "admin", password: nil),
+        "vnc://admin@mac.local:5900",
+        "user + host + port"
+    )
+    expectEqual(
+        buildVncURLMirror(host: "mac.local", port: 5900, username: "admin", password: "secret"),
+        "vnc://admin:secret@mac.local:5900",
+        "user:password@host:port"
+    )
+}
+
+describe("buildVncURL: 특수문자 escape") {
+    expectEqual(
+        buildVncURLMirror(host: "mac.local", port: nil, username: "ad@min", password: "p ss"),
+        "vnc://ad%40min:p%20ss@mac.local",
+        "user-info 안의 @ 와 공백을 percent-encode"
+    )
+    expectEqual(
+        buildVncURLMirror(host: "mac.local", port: 5901, username: nil, password: "p:s"),
+        "vnc://:p%3As@mac.local:5901",
+        "사용자명 없이 패스워드만 — :pw@host"
+    )
+}
+
+describe("buildVncURL: 빈 host 거부") {
+    expect(buildVncURLMirror(host: "", port: nil, username: nil, password: nil) == nil, "빈 host 는 nil")
+    expect(buildVncURLMirror(host: "   ", port: nil, username: nil, password: nil) == nil, "공백 host 는 nil")
+}
+
 // MARK: - 결과 출력
 
 print("")
