@@ -66,6 +66,10 @@ struct PathEntry: Identifiable, Codable, Hashable {
     var password: String?
     /// SSH 키파일로 쓸 attachments 의 id. attachments 안에 같은 id 가 존재해야 한다.
     var keyAttachmentId: UUID?
+    /// SSH 추가 옵션 라인들. 각 줄은 `Key Value` 형식(ssh config 와 동일).
+    /// 실행 시 `-oKey=Value` 인자로 변환되어 ssh 명령에 합성된다.
+    /// 예: ["HostKeyAlgorithms +ssh-rsa,ssh-dss", "ServerAliveInterval 30"]
+    var sshExtraOptions: [String]?
 
     init(
         id: UUID = UUID(),
@@ -83,7 +87,8 @@ struct PathEntry: Identifiable, Codable, Hashable {
         username: String? = nil,
         auth: RemoteAuth? = nil,
         password: String? = nil,
-        keyAttachmentId: UUID? = nil
+        keyAttachmentId: UUID? = nil,
+        sshExtraOptions: [String]? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -101,13 +106,14 @@ struct PathEntry: Identifiable, Codable, Hashable {
         self.auth = auth
         self.password = password
         self.keyAttachmentId = keyAttachmentId
+        self.sshExtraOptions = sshExtraOptions
     }
 
     // MARK: - Codable (backward compat)
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, name, path, commands, sortIndex, note, createdAt, updatedAt, attachments
-        case host, port, username, auth, password, keyAttachmentId
+        case host, port, username, auth, password, keyAttachmentId, sshExtraOptions
     }
 
     init(from decoder: Decoder) throws {
@@ -132,5 +138,6 @@ struct PathEntry: Identifiable, Codable, Hashable {
         self.auth = try c.decodeIfPresent(RemoteAuth.self, forKey: .auth)
         self.password = try c.decodeIfPresent(String.self, forKey: .password)
         self.keyAttachmentId = try c.decodeIfPresent(UUID.self, forKey: .keyAttachmentId)
+        self.sshExtraOptions = try c.decodeIfPresent([String].self, forKey: .sshExtraOptions)
     }
 }

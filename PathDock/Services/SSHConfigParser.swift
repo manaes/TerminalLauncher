@@ -22,6 +22,10 @@ struct SSHConfigHost: Identifiable, Hashable {
     let user: String?
     /// IdentityFile 디렉티브 값 (~ 확장된 절대 경로)
     let identityFilePath: String?
+    /// PathDock 이 직접 매핑하지 않는 그 외 옵션들. 원형(`Key Value`)을 보존한다.
+    /// 예: ["HostKeyAlgorithms +ssh-rsa,ssh-dss", "ServerAliveInterval 30"]
+    /// 실행 시 `-oKey=Value` 형식으로 ssh 인자에 합성된다.
+    let extraOptions: [String]
 
     var id: String { name }
 
@@ -58,6 +62,7 @@ enum SSHConfigParser {
         var port: Int?
         var user: String?
         var identity: String?
+        var extras: [String] = []         // 그 외 키-값 (`Key Value` 원형)
 
         func flush() {
             // 와일드카드/패턴 포함 이름은 모두 제외, 나머지는 각각 한 건씩 산출
@@ -67,7 +72,8 @@ enum SSHConfigParser {
                     hostName: hostName,
                     port: port,
                     user: user,
-                    identityFilePath: identity
+                    identityFilePath: identity,
+                    extraOptions: extras
                 ))
             }
             currentNames = []
@@ -75,6 +81,7 @@ enum SSHConfigParser {
             port = nil
             user = nil
             identity = nil
+            extras = []
         }
 
         for rawLine in text.components(separatedBy: .newlines) {
@@ -117,8 +124,9 @@ enum SSHConfigParser {
             case "identityfile":
                 identity = NSString(string: stripQuotes(value)).expandingTildeInPath
             default:
-                // 알 수 없는 키는 무시
-                break
+                // 그 외 모든 키는 원형(`Key Value`)으로 보존 → 사용자에게 노출 후
+                // 실행 시 `-oKey=Value` 로 합성
+                extras.append("\(key) \(value)")
             }
         }
         flush()

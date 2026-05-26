@@ -179,6 +179,12 @@ enum TerminalLauncher {
             sshParts.append("-i")
             sshParts.append("'\(shellEscapeSingleQuoted(keyPath))'")
         }
+        // 추가 옵션: "Key Value" → -oKey=Value (셸 escape + 작은따옴표 감싸기)
+        for line in entry.sshExtraOptions ?? [] {
+            if let opt = formatExtraSshOption(line) {
+                sshParts.append(opt)
+            }
+        }
         let sshCommand = sshParts.joined(separator: " ")
 
         if let echoLine = prefixEchoLine {
@@ -271,6 +277,38 @@ enum TerminalLauncher {
         }
         let joined = trimmed.joined(separator: " && ")
         return "cd '\(escapedPath)' && \(joined)"
+    }
+
+    /// `Key Value` 한 줄을 ssh 의 `-oKey=Value` 인자로 변환한다.
+    /// - 빈 줄 / Key 만 있는 줄은 nil 반환 (무시)
+    /// - Value 는 작은따옴표로 감싸 셸 escape
+    /// - Key 도 이론상 escape 필요 없지만 일관성 위해 단순 trim 만
+    static func formatExtraSshOption(_ rawLine: String) -> String? {
+        let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return nil }
+        // 첫 공백/탭을 기준으로 Key 와 Value 분리. `Key=Value` 도 허용.
+        let key: String
+        let value: String
+        if let eq = trimmed.firstIndex(of: "=") {
+            let firstWS = trimmed.firstIndex { $0 == " " || $0 == "\t" }
+            if firstWS == nil || eq < firstWS! {
+                key = String(trimmed[..<eq]).trimmingCharacters(in: .whitespaces)
+                value = String(trimmed[trimmed.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+            } else {
+                let parts = trimmed.split(maxSplits: 1, omittingEmptySubsequences: true) { $0 == " " || $0 == "\t" }
+                guard parts.count == 2 else { return nil }
+                key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+                value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            }
+        } else {
+            let parts = trimmed.split(maxSplits: 1, omittingEmptySubsequences: true) { $0 == " " || $0 == "\t" }
+            guard parts.count == 2 else { return nil }
+            key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+        }
+        if key.isEmpty || value.isEmpty { return nil }
+        // ssh 의 -o 인자: Key=Value 한 토큰. 전체를 작은따옴표로 감싸 셸 escape 처리.
+        return "-o'\(shellEscapeSingleQuoted(key))=\(shellEscapeSingleQuoted(value))'"
     }
 
     /// 작은따옴표로 감싸기 위한 escape. ' → '\''

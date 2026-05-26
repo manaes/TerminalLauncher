@@ -47,6 +47,8 @@ struct EntryEditorSheet: View {
     @State private var keyAttachmentId: UUID?
     /// `~/.ssh/config` 에서 읽어온 Host 목록 (kind == .remoteSSH 일 때만 채워둠)
     @State private var sshConfigHosts: [SSHConfigHost] = []
+    /// SSH 추가 옵션 (한 줄에 `Key Value`). 실행 시 `-oKey=Value` 로 변환된다.
+    @State private var sshExtraOptionsText: String = ""
 
     /// 사이즈 초과 등의 사용자 알림
     @State private var alertMessage: String?
@@ -83,6 +85,7 @@ struct EntryEditorSheet: View {
             _password = State(initialValue: entry.password ?? "")
             _sshAuth = State(initialValue: entry.auth ?? .password)
             _keyAttachmentId = State(initialValue: entry.keyAttachmentId)
+            _sshExtraOptionsText = State(initialValue: (entry.sshExtraOptions ?? []).joined(separator: "\n"))
         }
     }
 
@@ -268,6 +271,13 @@ struct EntryEditorSheet: View {
                 keyfileRow
             }
         }
+
+        Section("추가 옵션 (한 줄에 'Key Value', 실행 시 -oKey=Value 로 전달)") {
+            TextEditor(text: $sshExtraOptionsText)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 60)
+                .border(Color.secondary.opacity(0.2))
+        }
     }
 
     /// VNC 타입 입력 섹션
@@ -343,9 +353,11 @@ struct EntryEditorSheet: View {
     /// ssh config 의 한 Host 를 현재 폼에 반영한다.
     /// 항목 이름은 Host 이름(`Host <name>`)으로 설정한다. (사용자가 입력한 기존 name 도 덮어쓴다)
     /// IdentityFile 이 있으면 그 파일을 자동으로 첨부 시스템에 import 하고 keyfile 모드로 전환한다.
+    /// HostKeyAlgorithms 등 PathDock 이 직접 매핑하지 않는 옵션들은 "추가 옵션" 필드에 채워진다.
     private func applySSHConfigHost(_ h: SSHConfigHost) {
         name = h.name
         host = h.effectiveHost
+        sshExtraOptionsText = h.extraOptions.joined(separator: "\n")
         if let p = h.port {
             portText = String(p)
         } else {
@@ -581,6 +593,13 @@ struct EntryEditorSheet: View {
         let finalAuth: RemoteAuth?
         let finalPassword: String?
         let finalKeyId: UUID?
+        let finalExtraOptions: [String]?
+
+        // SSH 추가 옵션을 줄 단위로 정리 (빈/공백 줄 제거)
+        let extraLines = sshExtraOptionsText
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
 
         switch kind {
         case .command:
@@ -593,6 +612,7 @@ struct EntryEditorSheet: View {
             finalAuth = nil
             finalPassword = nil
             finalKeyId = nil
+            finalExtraOptions = nil
         case .remoteSSH:
             finalPath = ""
             finalCommands = []
@@ -618,6 +638,7 @@ struct EntryEditorSheet: View {
             finalUsername = trimmedUser.isEmpty ? nil : trimmedUser
             finalAuth = sshAuth
             finalPassword = (sshAuth == .password && !pw.isEmpty) ? pw : nil
+            finalExtraOptions = extraLines.isEmpty ? nil : extraLines
         case .remoteVNC:
             finalPath = ""
             finalCommands = []
@@ -632,6 +653,7 @@ struct EntryEditorSheet: View {
             finalAuth = nil
             finalPassword = pw.isEmpty ? nil : pw
             finalKeyId = nil
+            finalExtraOptions = nil
         }
 
         let entry: PathEntry
@@ -652,7 +674,8 @@ struct EntryEditorSheet: View {
                 username: finalUsername,
                 auth: finalAuth,
                 password: finalPassword,
-                keyAttachmentId: finalKeyId
+                keyAttachmentId: finalKeyId,
+                sshExtraOptions: finalExtraOptions
             )
             // 편집 모드: 원본에 있었지만 이번 편집에서 제거된 첨부는 디스크에서도 삭제
             let currentIds = Set(finalAttachments.map { $0.id })
@@ -676,7 +699,8 @@ struct EntryEditorSheet: View {
                 username: finalUsername,
                 auth: finalAuth,
                 password: finalPassword,
-                keyAttachmentId: finalKeyId
+                keyAttachmentId: finalKeyId,
+                sshExtraOptions: finalExtraOptions
             )
         }
         onSave(entry)

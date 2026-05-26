@@ -692,6 +692,7 @@ struct SSHConfigHostMirror: Equatable {
     let port: Int?
     let user: String?
     let identityFilePath: String?
+    let extraOptions: [String]
 }
 
 enum SSHConfigParserMirror {
@@ -702,12 +703,14 @@ enum SSHConfigParserMirror {
         var port: Int?
         var user: String?
         var identity: String?
+        var extras: [String] = []
 
         func flush() {
             for name in currentNames where !name.contains("*") && !name.contains("?") {
                 hosts.append(SSHConfigHostMirror(
                     name: name, hostName: hostName, port: port,
-                    user: user, identityFilePath: identity
+                    user: user, identityFilePath: identity,
+                    extraOptions: extras
                 ))
             }
             currentNames = []
@@ -715,6 +718,7 @@ enum SSHConfigParserMirror {
             port = nil
             user = nil
             identity = nil
+            extras = []
         }
 
         for rawLine in text.components(separatedBy: .newlines) {
@@ -739,7 +743,8 @@ enum SSHConfigParserMirror {
             case "user":     user = value
             case "identityfile":
                 identity = NSString(string: stripQuotes(value)).expandingTildeInPath
-            default: break
+            default:
+                extras.append("\(key) \(value)")
             }
         }
         flush()
@@ -846,6 +851,94 @@ describe("SSHConfig: 빈 입력 / 글로벌만") {
     expectEqual(
         SSHConfigParserMirror.parse("HostName foo\nUser bar").count, 0,
         "Host 블록 밖 키만 있으면 0건"
+    )
+}
+
+describe("SSHConfig: 미지정 키는 extraOptions 로 보존") {
+    let cfg = """
+    Host legacy
+        HostName 14.63.169.122
+        Port 30022
+        User admin
+        HostKeyAlgorithms +ssh-rsa,ssh-dss
+        PubkeyAcceptedAlgorithms +ssh-rsa
+        ServerAliveInterval 30
+    """
+    let hosts = SSHConfigParserMirror.parse(cfg)
+    expectEqual(hosts.count, 1, "1건")
+    if let h = hosts.first {
+        expectEqual(h.hostName, "14.63.169.122", "HostName 보존")
+        expectEqual(h.port, 30022, "Port 보존")
+        expectEqual(h.user, "admin", "User 보존")
+        expectEqual(h.extraOptions.count, 3, "extraOptions 3건")
+        expect(h.extraOptions.contains("HostKeyAlgorithms +ssh-rsa,ssh-dss"), "HostKeyAlgorithms 라인 보존")
+        expect(h.extraOptions.contains("PubkeyAcceptedAlgorithms +ssh-rsa"), "PubkeyAcceptedAlgorithms 라인 보존")
+        expect(h.extraOptions.contains("ServerAliveInterval 30"), "ServerAliveInterval 라인 보존")
+    }
+}
+
+// MARK: - formatExtraSshOption Mirror
+
+/// TerminalLauncher.formatExtraSshOption 의 미러. `Key Value` 또는 `Key=Value` 한 줄을
+/// ssh 의 `-oKey=Value` 인자(작은따옴표 감싸기)로 변환한다.
+func formatExtraSshOptionMirror(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty { return nil }
+    let key: String
+    let value: String
+    if let eq = trimmed.firstIndex(of: "=") {
+        let firstWS = trimmed.firstIndex { $0 == " " || $0 == "\t" }
+        if firstWS == nil || eq < firstWS! {
+            key = String(trimmed[..<eq]).trimmingCharacters(in: .whitespaces)
+            value = String(trimmed[trimmed.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+        } else {
+            let parts = trimmed.split(maxSplits: 1, omittingEmptySubsequences: true) { $0 == " " || $0 == "\t" }
+            guard parts.count == 2 else { return nil }
+            key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+        }
+    } else {
+        let parts = trimmed.split(maxSplits: 1, omittingEmptySubsequences: true) { $0 == " " || $0 == "\t" }
+        guard parts.count == 2 else { return nil }
+        key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+        value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+    }
+    if key.isEmpty || value.isEmpty { return nil }
+    let keyEsc = TerminalLauncherMirror.shellEscapeSingleQuoted(key)
+    let valEsc = TerminalLauncherMirror.shellEscapeSingleQuoted(value)
+    return "-o'\(keyEsc)=\(valEsc)'"
+}
+
+describe("formatExtraSshOption: 기본") {
+    expectEqual(
+        formatExtraSshOptionMirror("HostKeyAlgorithms +ssh-rsa,ssh-dss"),
+        "-o'HostKeyAlgorithms=+ssh-rsa,ssh-dss'",
+        "공백 분리 'Key Value'"
+    )
+    expectEqual(
+        formatExtraSshOptionMirror("ServerAliveInterval=30"),
+        "-o'ServerAliveInterval=30'",
+        "= 형태도 동일 결과"
+    )
+    expectEqual(
+        formatExtraSshOptionMirror("  PreferredAuthentications\tpublickey,password "),
+        "-o'PreferredAuthentications=publickey,password'",
+        "탭/공백 trim"
+    )
+}
+
+describe("formatExtraSshOption: 빈/불완전 입력 거부") {
+    expect(formatExtraSshOptionMirror("") == nil, "빈 줄 nil")
+    expect(formatExtraSshOptionMirror("   ") == nil, "공백뿐 nil")
+    expect(formatExtraSshOptionMirror("KeyWithoutValue") == nil, "값 없는 키 nil")
+    expect(formatExtraSshOptionMirror("=just-value") == nil, "키 없는 = 시작 nil")
+}
+
+describe("formatExtraSshOption: 작은따옴표 escape") {
+    expectEqual(
+        formatExtraSshOptionMirror("RemoteCommand echo 'hello world'"),
+        "-o'RemoteCommand=echo '\\''hello world'\\'''",
+        "Value 안의 작은따옴표는 '\\'' 로 escape"
     )
 }
 
