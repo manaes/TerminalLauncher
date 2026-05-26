@@ -9,6 +9,9 @@ import SwiftUI
 
 struct EntryRow: View {
     let entry: PathEntry
+    /// iTerm2 백엔드에서 해당 entry 의 세션이 살아있는지 여부.
+    /// 부모(ContentView)가 폴링 결과로 갱신한다. Terminal.app 백엔드면 항상 false.
+    var sessionAlive: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -29,6 +32,17 @@ struct EntryRow: View {
                             .padding(.vertical, 2)
                             .background(badgeColor.opacity(0.18), in: Capsule())
                             .foregroundStyle(badgeColor)
+                    }
+                    // iTerm2 세션이 살아있을 때만 인디케이터 표시
+                    if sessionAlive {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 8, height: 8)
+                            Text("실행 중")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                        }
                     }
                 }
 

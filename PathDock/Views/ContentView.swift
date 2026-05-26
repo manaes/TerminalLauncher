@@ -10,6 +10,10 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject private var store: EntryStore
+    @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var preferencesStore: PreferencesStore
+    /// 윈도우 활성/백그라운드 추적 — 비활성일 때 폴링 일시정지.
+    @Environment(\.scenePhase) private var scenePhase
 
     /// 편집 시트 모드 (nil 이면 닫힘)
     @State private var editorMode: EditorMode?
@@ -17,6 +21,11 @@ struct ContentView: View {
     @State private var pendingDelete: PathEntry?
     /// 실행 실패 알림 표시용
     @State private var launchError: IdentifiableError?
+
+    /// 폴링 트리거 (2초마다 +1 — UI 리렌더 유도용)
+    @State private var pollTick: Int = 0
+    /// 폴링 타이머 publisher (autoconnect 후 매 2초마다 발화)
+    private let pollTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
 
     enum EditorMode: Identifiable {
         case new
@@ -93,6 +102,12 @@ struct ContentView: View {
         } message: { entry in
             Text("\"\(entry.name)\" 을(를) 영구적으로 제거합니다.")
         }
+        .onReceive(pollTimer) { _ in
+            // 윈도우 비활성 시 폴링 일시정지
+            guard scenePhase == .active else { return }
+            pollTick &+= 1
+            validateAllSessions()
+        }
     }
 
     // MARK: - Sub Views
@@ -115,7 +130,9 @@ struct ContentView: View {
     private var listView: some View {
         List {
             ForEach(store.entries) { entry in
-                EntryRow(entry: entry)
+                // iTerm2 백엔드일 때만 세션 매핑 + isAlive 결과로 인디케이터 표시.
+                // Terminal.app 백엔드는 항상 false.
+                EntryRow(entry: entry, sessionAlive: isSessionAlive(for: entry))
                     // 더블클릭 시 실행
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
@@ -124,6 +141,14 @@ struct ContentView: View {
                     .contextMenu {
                         Button("편집…") { editorMode = .edit(entry) }
                         Button("실행") { launch(entry) }
+                        // iTerm2 백엔드 전용: 항상 새 세션
+                        if preferencesStore.prefs.terminalBackend == .iterm2 {
+                            Button("새 세션으로 실행") { launchNewSession(entry) }
+                        }
+                        // 세션이 살아있을 때만 종료 버튼
+                        if isSessionAlive(for: entry) {
+                            Button("세션 종료") { terminateSession(entry) }
+                        }
                         Button("복제") { store.duplicate(id: entry.id) }
                         Divider()
                         Button("위로") { store.moveUp(id: entry.id) }
@@ -143,16 +168,40 @@ struct ContentView: View {
 
     // MARK: - Actions
 
+    /// 현재 prefs 기반 런처 인스턴스를 만든다.
+    private func makeLauncher() -> Launcher {
+        switch preferencesStore.prefs.terminalBackend {
+        case .terminal: return TerminalAppLauncher()
+        case .iterm2:   return ITermLauncher()
+        }
+    }
+
+    /// 현재 entry 의 세션이 살아있는지 (백엔드 + SessionStore + isAlive 의 합집합).
+    /// pollTick 의 영향을 받아 2초마다 재평가된다.
+    private func isSessionAlive(for entry: PathEntry) -> Bool {
+        _ = pollTick // tick 의존성을 명시적으로 표기 (옵티마이저가 제거하지 않도록)
+        guard preferencesStore.prefs.terminalBackend == .iterm2 else { return false }
+        guard let s = sessionStore.sessions[entry.id] else { return false }
+        return makeLauncher().isAlive(s)
+    }
+
+    /// 더블클릭/메뉴 "실행" — 살아있는 세션이 있으면 activate, 없으면 새 세션.
     private func launch(_ entry: PathEntry) {
+        let launcher = makeLauncher()
         do {
-            // entry.kind 에 따라 적절한 런처로 위임
-            switch entry.kind {
-            case .command:
-                try TerminalLauncher.launch(entry, attachmentStore: store.attachmentStore)
-            case .remoteSSH:
-                try TerminalLauncher.launchSSH(entry, attachmentStore: store.attachmentStore)
-            case .remoteVNC:
-                try RemoteLauncher.launchVNC(entry)
+            // 살아있는 세션이 있으면 활성화 우선
+            if let s = sessionStore.sessions[entry.id], launcher.isAlive(s) {
+                try launcher.activate(s)
+                return
+            }
+            // 새 세션 생성
+            let newSession = try launcher.launch(
+                entry,
+                attachmentStore: store.attachmentStore,
+                prefs: preferencesStore.prefs
+            )
+            if let newSession = newSession {
+                sessionStore.set(entryId: entry.id, session: newSession)
             }
         } catch let err as LaunchError {
             launchError = IdentifiableError(message: err.errorDescription ?? "알 수 없는 오류")
@@ -161,7 +210,41 @@ struct ContentView: View {
         }
     }
 
-    /// 우측상단 "새 터미널" 버튼 — 등록 항목 없이 Terminal 새 창만 띄움
+    /// "새 세션으로 실행" — 기존 매핑이 있으면 폐기하고 새 세션을 띄운다.
+    private func launchNewSession(_ entry: PathEntry) {
+        let launcher = makeLauncher()
+        // 기존 매핑은 폐기 (살아있더라도 매핑만 떼고 새 세션을 만든다)
+        sessionStore.clear(entryId: entry.id)
+        do {
+            let newSession = try launcher.launch(
+                entry,
+                attachmentStore: store.attachmentStore,
+                prefs: preferencesStore.prefs
+            )
+            if let newSession = newSession {
+                sessionStore.set(entryId: entry.id, session: newSession)
+            }
+        } catch let err as LaunchError {
+            launchError = IdentifiableError(message: err.errorDescription ?? "알 수 없는 오류")
+        } catch {
+            launchError = IdentifiableError(message: error.localizedDescription)
+        }
+    }
+
+    /// "세션 종료" — 매핑된 iTerm2 세션을 close 하고 매핑 폐기.
+    private func terminateSession(_ entry: PathEntry) {
+        let launcher = makeLauncher()
+        guard let s = sessionStore.sessions[entry.id] else { return }
+        do {
+            try launcher.terminate(s)
+        } catch {
+            // 이미 죽었거나 백엔드가 지원 안 함 — 어쨌든 매핑은 정리
+            NSLog("[PathDock] terminate 실패(무시): %@", String(describing: error))
+        }
+        sessionStore.clear(entryId: entry.id)
+    }
+
+    /// 우측상단 "새 터미널" 버튼 — 등록 항목 없이 빈 창 한 개. 백엔드는 항상 Terminal.app 으로 고정.
     private func openBlankTerminal() {
         do {
             try TerminalLauncher.launchEmptyWindow()
@@ -169,6 +252,24 @@ struct ContentView: View {
             launchError = IdentifiableError(message: err.errorDescription ?? "알 수 없는 오류")
         } catch {
             launchError = IdentifiableError(message: error.localizedDescription)
+        }
+    }
+
+    /// 폴링 콜백 — SessionStore 의 모든 매핑을 isAlive 로 검사해 dead 면 폐기.
+    private func validateAllSessions() {
+        guard preferencesStore.prefs.terminalBackend == .iterm2 else {
+            // Terminal 백엔드면 세션 추적 의미 없음 — 매핑이 있어도 그대로 둔다 (백엔드 토글 시 ContentView 가 그 안에서 clearAll 호출)
+            return
+        }
+        let launcher = makeLauncher()
+        var deadIds: [UUID] = []
+        for (entryId, session) in sessionStore.sessions {
+            if !launcher.isAlive(session) {
+                deadIds.append(entryId)
+            }
+        }
+        for id in deadIds {
+            sessionStore.clear(entryId: id)
         }
     }
 }
@@ -180,10 +281,17 @@ struct IdentifiableError: Identifiable {
 }
 
 #Preview {
-    ContentView()
+    let tmp = FileManager.default.temporaryDirectory
+    return ContentView()
         .environmentObject(EntryStore(
-            rootDir: FileManager.default.temporaryDirectory,
+            rootDir: tmp,
             encrypted: false,
             key: nil
         ))
+        .environmentObject(SessionStore(
+            rootDir: tmp,
+            encrypted: false,
+            key: nil
+        ))
+        .environmentObject(PreferencesStore(rootDir: tmp))
 }

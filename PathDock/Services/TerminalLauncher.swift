@@ -21,6 +21,12 @@ enum LaunchError: LocalizedError {
     case invalidRemoteConfig(String)
     /// VNC URL 을 NSWorkspace 로 여는 데 실패
     case vncOpenFailed(String)
+    /// iTerm2 가 설치되어 있지 않음
+    case itermNotInstalled
+    /// 현재 백엔드가 세션 추적/활성화/종료를 지원하지 않음 (Terminal.app)
+    case backendDoesNotSupportSessionTracking
+    /// iTerm2 AppleScript 실행 실패 (메시지 포함)
+    case itermScriptFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -36,6 +42,12 @@ enum LaunchError: LocalizedError {
             return "원격 연결 설정이 올바르지 않습니다.\n\(msg)"
         case .vncOpenFailed(let msg):
             return "VNC 연결에 실패했습니다.\n\(msg)"
+        case .itermNotInstalled:
+            return "iTerm2 가 설치되어 있지 않습니다.\n\niterm2.com 에서 설치하거나 설정에서 Terminal 백엔드로 변경하세요."
+        case .backendDoesNotSupportSessionTracking:
+            return "현재 터미널 백엔드는 세션 추적을 지원하지 않습니다."
+        case .itermScriptFailed(let msg):
+            return "iTerm2 실행에 실패했습니다.\n\n\(msg)\n\n시스템 설정 → 개인 정보 보호 및 보안 → 자동화에서 PathDock 의 iTerm 제어 권한을 허용했는지 확인하세요."
         }
     }
 }

@@ -959,6 +959,67 @@ describe("SSHConfig: 다중 블록 + 누락 필드") {
     }
 }
 
+// MARK: - Preferences 직렬화 Mirror
+
+enum TerminalBackendMirror: String, Codable { case terminal = "Terminal", iterm2 = "iTerm2" }
+
+struct PreferencesMirror: Codable, Equatable {
+    var terminalBackend: TerminalBackendMirror = .terminal
+    var itermAutoTypePassword: Bool = true
+}
+
+describe("Preferences: 기본값 round-trip") {
+    let prefs = PreferencesMirror()
+    let enc = JSONEncoder()
+    enc.outputFormatting = [.sortedKeys]
+    let data = try! enc.encode(prefs)
+    let s = String(data: data, encoding: .utf8) ?? ""
+    expect(s.contains("\"terminalBackend\":\"Terminal\""), "기본 백엔드 = Terminal")
+    expect(s.contains("\"itermAutoTypePassword\":true"), "기본 자동 입력 = true")
+
+    let decoded = try! JSONDecoder().decode(PreferencesMirror.self, from: data)
+    expectEqual(decoded, prefs, "round-trip 일치")
+}
+
+describe("Preferences: backend = iTerm2") {
+    var prefs = PreferencesMirror()
+    prefs.terminalBackend = .iterm2
+    prefs.itermAutoTypePassword = false
+    let data = try! JSONEncoder().encode(prefs)
+    let decoded = try! JSONDecoder().decode(PreferencesMirror.self, from: data)
+    expectEqual(decoded.terminalBackend, .iterm2, "iTerm2 직렬화")
+    expectEqual(decoded.itermAutoTypePassword, false, "자동 입력 false 직렬화")
+}
+
+// MARK: - ITermSession 매핑 Mirror
+
+struct ITermSessionMirror: Codable, Equatable {
+    let id: UUID
+    let sessionId: String
+    let windowId: String
+}
+
+describe("ITermSession: 매핑 round-trip") {
+    let sess = ITermSessionMirror(id: UUID(), sessionId: "abc-123", windowId: "w-7")
+    let data = try! JSONEncoder().encode(sess)
+    let decoded = try! JSONDecoder().decode(ITermSessionMirror.self, from: data)
+    expectEqual(decoded, sess, "직렬화 round-trip")
+}
+
+describe("ITermSession: dictionary 직렬화") {
+    let id1 = UUID()
+    let id2 = UUID()
+    let map: [UUID: ITermSessionMirror] = [
+        id1: ITermSessionMirror(id: id1, sessionId: "s1", windowId: "w1"),
+        id2: ITermSessionMirror(id: id2, sessionId: "s2", windowId: "w2"),
+    ]
+    // [UUID: ...] 는 JSONEncoder 가 자연 직렬화 불가 → 키 문자열화 패턴
+    let stringMap = Dictionary(uniqueKeysWithValues: map.map { ($0.key.uuidString, $0.value) })
+    let data = try! JSONEncoder().encode(stringMap)
+    let decoded = try! JSONDecoder().decode([String: ITermSessionMirror].self, from: data)
+    expectEqual(decoded.count, 2, "2건 round-trip")
+}
+
 // MARK: - 결과 출력
 
 print("")

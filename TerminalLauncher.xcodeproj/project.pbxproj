@@ -30,6 +30,13 @@
 		A100000000000000000000C9 /* ImportPasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000CA /* ImportPasswordSheet.swift */; };
 		A100000000000000000000D5 /* RemoteLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000D6 /* RemoteLauncher.swift */; };
 		A100000000000000000000D7 /* SSHConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000D8 /* SSHConfigParser.swift */; };
+		A100000000000000000000E2 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E1 /* Preferences.swift */; };
+		A100000000000000000000E4 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E3 /* PreferencesStore.swift */; };
+		A100000000000000000000E6 /* ITermSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E5 /* ITermSession.swift */; };
+		A100000000000000000000E8 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000E7 /* SessionStore.swift */; };
+		A100000000000000000000F3 /* Launcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F2 /* Launcher.swift */; };
+		A100000000000000000000F5 /* TerminalAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F4 /* TerminalAppLauncher.swift */; };
+		A100000000000000000000F7 /* ITermLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F6 /* ITermLauncher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -58,7 +65,14 @@
 		A100000000000000000000D3 /* PathDock.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PathDock.entitlements; sourceTree = "<group>"; };
 		A100000000000000000000D6 /* RemoteLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteLauncher.swift; sourceTree = "<group>"; };
 		A100000000000000000000D8 /* SSHConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConfigParser.swift; sourceTree = "<group>"; };
+		A100000000000000000000E1 /* Preferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Preferences.swift; sourceTree = "<group>"; };
+		A100000000000000000000E3 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
+		A100000000000000000000E5 /* ITermSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITermSession.swift; sourceTree = "<group>"; };
+		A100000000000000000000E7 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		A100000000000000000000F1 /* PathDock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PathDock.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A100000000000000000000F2 /* Launcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Launcher.swift; sourceTree = "<group>"; };
+		A100000000000000000000F4 /* TerminalAppLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppLauncher.swift; sourceTree = "<group>"; };
+		A100000000000000000000F6 /* ITermLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITermLauncher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +114,8 @@
 				A100000000000000000000A2 /* PathEntry.swift */,
 				A100000000000000000000A8 /* SecurityConfig.swift */,
 				A100000000000000000000A9 /* Attachment.swift */,
+				A100000000000000000000E1 /* Preferences.swift */,
+				A100000000000000000000E5 /* ITermSession.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -110,6 +126,8 @@
 				A100000000000000000000A3 /* EntryStore.swift */,
 				A100000000000000000000AB /* SecurityStore.swift */,
 				A100000000000000000000AC /* AttachmentStore.swift */,
+				A100000000000000000000E3 /* PreferencesStore.swift */,
+				A100000000000000000000E7 /* SessionStore.swift */,
 			);
 			path = Stores;
 			sourceTree = "<group>";
@@ -123,6 +141,9 @@
 				A100000000000000000000AA /* CryptoService.swift */,
 				A100000000000000000000C5 /* ExportService.swift */,
 				A100000000000000000000C6 /* ImportService.swift */,
+				A100000000000000000000F2 /* Launcher.swift */,
+				A100000000000000000000F4 /* TerminalAppLauncher.swift */,
+				A100000000000000000000F6 /* ITermLauncher.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -251,6 +272,13 @@
 				A100000000000000000000C9 /* ImportPasswordSheet.swift in Sources */,
 				A100000000000000000000D5 /* RemoteLauncher.swift in Sources */,
 				A100000000000000000000D7 /* SSHConfigParser.swift in Sources */,
+				A100000000000000000000E2 /* Preferences.swift in Sources */,
+				A100000000000000000000E4 /* PreferencesStore.swift in Sources */,
+				A100000000000000000000E6 /* ITermSession.swift in Sources */,
+				A100000000000000000000E8 /* SessionStore.swift in Sources */,
+				A100000000000000000000F3 /* Launcher.swift in Sources */,
+				A100000000000000000000F5 /* TerminalAppLauncher.swift in Sources */,
+				A100000000000000000000F7 /* ITermLauncher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -379,7 +407,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = LC8PY3D283;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -390,7 +418,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wannypark.pathdock;
 				PRODUCT_NAME = PathDock;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -407,7 +435,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = LC8PY3D283;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -418,7 +446,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wannypark.pathdock;
 				PRODUCT_NAME = PathDock;
 				SWIFT_EMIT_LOC_STRINGS = YES;

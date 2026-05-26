@@ -12,6 +12,8 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject private var store: EntryStore
     @EnvironmentObject private var security: SecurityStore
+    @EnvironmentObject private var sessionStore: SessionStore
+    @EnvironmentObject private var preferencesStore: PreferencesStore
 
     /// 전체 초기화 확인 다이얼로그 표시 여부
     @State private var showResetConfirm = false
@@ -21,6 +23,8 @@ struct SettingsView: View {
     @State private var pendingImportURL: URL?
     /// 결과 알림 (성공/실패)
     @State private var resultMessage: String?
+    /// iTerm2 미설치 알럿 표시 여부
+    @State private var showITermMissingAlert = false
 
     var body: some View {
         Form {
@@ -37,6 +41,38 @@ struct SettingsView: View {
                     Text("비밀번호 초기화…")
                 }
                 .help("모든 데이터를 삭제하고 첫 실행 화면으로 돌아갑니다.")
+            }
+
+            Section("터미널") {
+                // 사용자 백엔드 선택. iTerm2 변경 시 설치 검증 + 매핑 폐기.
+                Picker("백엔드", selection: backendBinding) {
+                    ForEach(TerminalBackend.allCases) { b in
+                        Text(b.rawValue).tag(b)
+                    }
+                }
+                .pickerStyle(.segmented)
+                if preferencesStore.prefs.terminalBackend == .iterm2 && !LauncherUtil.isITermInstalled() {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Text("iTerm2 가 설치되어 있지 않습니다.")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("설치하기") {
+                            if let url = URL(string: "https://iterm2.com/") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
+            }
+
+            // iTerm2 백엔드 전용 옵션 섹션
+            if preferencesStore.prefs.terminalBackend == .iterm2 {
+                Section("iTerm2") {
+                    Toggle("SSH 패스워드 자동 입력 (delay 2초)", isOn: $preferencesStore.prefs.itermAutoTypePassword)
+                }
             }
 
             Section("데이터") {
@@ -103,6 +139,41 @@ struct SettingsView: View {
         } message: { msg in
             Text(msg)
         }
+        .alert(
+            "iTerm2 가 설치되어 있지 않습니다.",
+            isPresented: $showITermMissingAlert
+        ) {
+            Button("확인", role: .cancel) { }
+            Button("설치하기") {
+                if let url = URL(string: "https://iterm2.com/") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        } message: {
+            Text("iterm2.com 에서 설치하거나 Terminal 을 선택하세요.")
+        }
+    }
+
+    /// 백엔드 Picker 의 커스텀 binding.
+    /// - iTerm2 선택 + 미설치면 변경 취소 + 알럿 표시
+    /// - 백엔드가 실제로 바뀌면 SessionStore 의 매핑을 모두 폐기
+    private var backendBinding: Binding<TerminalBackend> {
+        Binding(
+            get: { preferencesStore.prefs.terminalBackend },
+            set: { newValue in
+                let current = preferencesStore.prefs.terminalBackend
+                if newValue == .iterm2 && !LauncherUtil.isITermInstalled() {
+                    // 설치 안 됨 → 변경 막고 알럿
+                    showITermMissingAlert = true
+                    return
+                }
+                if newValue != current {
+                    preferencesStore.prefs.terminalBackend = newValue
+                    // 백엔드 변경 시 기존 세션 매핑은 의미가 없어진다 — 일괄 폐기
+                    sessionStore.clearAll()
+                }
+            }
+        )
     }
 
     // MARK: - 표시 헬퍼

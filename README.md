@@ -81,6 +81,21 @@ PathDock 은 Terminal.app 을 AppleScript 로 제어한다. 첫 실행 시 macOS
 - **plain 모드**: 직접 편집 가능. 단, 앱 실행 중엔 디바운스 저장에 덮어쓰일 수 있으니 앱 종료 후 수정.
 - **encrypted 모드**: Keychain 항목 `com.wannypark.pathdock.masterkey` (account: `default`, AccessibleWhenUnlockedThisDeviceOnly).
 
+## 터미널 백엔드 (Terminal / iTerm2)
+
+PathDock 은 두 가지 터미널 백엔드를 지원한다.
+
+| 백엔드 | 세션 추적 | 패스워드 자동 입력 | 비고 |
+|---|---|---|---|
+| **Terminal.app** | X (매번 새 창) | 클립보드 복사 + 안내 echo | macOS 기본, 자동화 권한 |
+| **iTerm2** | O — 세션 살아있으면 더블클릭 시 활성화 | AppleScript `write text` 로 자동 (기본 ON, delay 2초) | 별도 설치 필요 |
+
+- 첫 실행 다이얼로그 또는 메뉴 → 설정 → 터미널 에서 선택
+- iTerm2 미설치 상태로 선택 시도 → "설치하기" 버튼 알럿 (`https://iterm2.com/` 으로 이동)
+- 백엔드 변경 시 기존 세션 매핑은 폐기됨
+- iTerm2 모드에서만 리스트 행에 **● 실행 중** 인디케이터 표시 (2초 폴링, 윈도우 비활성 시 정지)
+- 우클릭 메뉴: "실행" (활성화 우선) / "새 세션으로 실행" / "세션 종료" (살아있을 때만)
+
 ## 보안 / 첫 실행
 
 첫 실행 시 다이얼로그에서 다음 중 하나를 선택한다.
