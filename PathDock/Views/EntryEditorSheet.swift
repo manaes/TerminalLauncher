@@ -92,13 +92,19 @@ struct EntryEditorSheet: View {
                 .font(.title3.bold())
                 .padding(.bottom, 12)
 
-            // 타입 선택 — 최상단에 segmented picker
-            Picker("타입", selection: $kind) {
-                Text("명령어").tag(EntryKind.command)
-                Text("SSH").tag(EntryKind.remoteSSH)
-                Text("VNC").tag(EntryKind.remoteVNC)
+            // 타입 선택 — segmented picker + (SSH 일 때만) 우측에 ssh config 가져오기 버튼
+            HStack(spacing: 8) {
+                Picker("타입", selection: $kind) {
+                    Text("명령어").tag(EntryKind.command)
+                    Text("SSH").tag(EntryKind.remoteSSH)
+                    Text("VNC").tag(EntryKind.remoteVNC)
+                }
+                .pickerStyle(.segmented)
+
+                if kind == .remoteSSH {
+                    sshConfigImportButton
+                }
             }
-            .pickerStyle(.segmented)
             .padding(.bottom, 8)
 
             Form {
@@ -211,31 +217,35 @@ struct EntryEditorSheet: View {
         }
     }
 
+    /// 타입 Picker 우측의 ssh config 가져오기 버튼 (SSH 일 때만 노출)
+    @ViewBuilder
+    private var sshConfigImportButton: some View {
+        Menu {
+            if sshConfigHosts.isEmpty {
+                Text("~/.ssh/config 에 등록된 Host 없음")
+            } else {
+                ForEach(sshConfigHosts) { h in
+                    Button {
+                        applySSHConfigHost(h)
+                    } label: {
+                        Text(sshConfigMenuLabel(for: h))
+                    }
+                }
+            }
+        } label: {
+            Label("ssh config", systemImage: "square.and.arrow.down")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(sshConfigHosts.isEmpty)
+        .help(sshConfigHosts.isEmpty
+              ? "~/.ssh/config 에 등록된 Host 가 없습니다"
+              : "ssh config 의 Host 를 선택해 폼을 자동으로 채웁니다")
+    }
+
     /// SSH 타입 입력 섹션
     @ViewBuilder
     private var sshSections: some View {
-        // ~/.ssh/config 의 Host 항목을 골라 폼을 자동 채움
-        Section("ssh config") {
-            if sshConfigHosts.isEmpty {
-                Text("~/.ssh/config 에 등록된 Host 가 없습니다.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else {
-                Menu {
-                    ForEach(sshConfigHosts) { h in
-                        Button {
-                            applySSHConfigHost(h)
-                        } label: {
-                            Text(sshConfigMenuLabel(for: h))
-                        }
-                    }
-                } label: {
-                    Label("ssh config 에서 가져오기", systemImage: "square.and.arrow.down")
-                }
-                .help("선택한 Host 의 HostName / Port / User / IdentityFile 을 폼에 채웁니다.")
-            }
-        }
-
         Section("연결 정보") {
             TextField("주소(host)", text: $host, prompt: Text("예: 192.168.0.10 또는 example.com"))
                 .font(.system(.body, design: .monospaced))
@@ -331,8 +341,10 @@ struct EntryEditorSheet: View {
     }
 
     /// ssh config 의 한 Host 를 현재 폼에 반영한다.
+    /// 항목 이름은 Host 이름(`Host <name>`)으로 설정한다. (사용자가 입력한 기존 name 도 덮어쓴다)
     /// IdentityFile 이 있으면 그 파일을 자동으로 첨부 시스템에 import 하고 keyfile 모드로 전환한다.
     private func applySSHConfigHost(_ h: SSHConfigHost) {
+        name = h.name
         host = h.effectiveHost
         if let p = h.port {
             portText = String(p)
