@@ -45,6 +45,8 @@ struct EntryEditorSheet: View {
     // SSH 전용
     @State private var sshAuth: RemoteAuth = .password
     @State private var keyAttachmentId: UUID?
+    /// `~/.ssh/config` 에서 읽어온 Host 목록 (kind == .remoteSSH 일 때만 채워둠)
+    @State private var sshConfigHosts: [SSHConfigHost] = []
 
     /// 사이즈 초과 등의 사용자 알림
     @State private var alertMessage: String?
@@ -141,6 +143,8 @@ struct EntryEditorSheet: View {
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 560)
+        .onAppear { loadSSHConfigIfNeeded() }
+        .onChange(of: kind) { _ in loadSSHConfigIfNeeded() }
         .alert(
             "알림",
             isPresented: Binding(
@@ -210,6 +214,28 @@ struct EntryEditorSheet: View {
     /// SSH 타입 입력 섹션
     @ViewBuilder
     private var sshSections: some View {
+        // ~/.ssh/config 의 Host 항목을 골라 폼을 자동 채움
+        Section("ssh config") {
+            if sshConfigHosts.isEmpty {
+                Text("~/.ssh/config 에 등록된 Host 가 없습니다.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                Menu {
+                    ForEach(sshConfigHosts) { h in
+                        Button {
+                            applySSHConfigHost(h)
+                        } label: {
+                            Text(sshConfigMenuLabel(for: h))
+                        }
+                    }
+                } label: {
+                    Label("ssh config 에서 가져오기", systemImage: "square.and.arrow.down")
+                }
+                .help("선택한 Host 의 HostName / Port / User / IdentityFile 을 폼에 채웁니다.")
+            }
+        }
+
         Section("연결 정보") {
             TextField("주소(host)", text: $host, prompt: Text("예: 192.168.0.10 또는 example.com"))
                 .font(.system(.body, design: .monospaced))
@@ -276,6 +302,61 @@ struct EntryEditorSheet: View {
             Button("키파일 선택…") {
                 pickKeyfile()
             }
+        }
+    }
+
+    // MARK: - ssh config import
+
+    /// kind 가 SSH 일 때 ~/.ssh/config 를 한 번 로드한다. 이미 로드돼 있으면 no-op.
+    private func loadSSHConfigIfNeeded() {
+        guard kind == .remoteSSH else { return }
+        if sshConfigHosts.isEmpty {
+            sshConfigHosts = SSHConfigParser.loadDefault()
+        }
+    }
+
+    /// 메뉴 라벨 — "name — user@hostname:port"
+    private func sshConfigMenuLabel(for h: SSHConfigHost) -> String {
+        var subtitle = h.effectiveHost
+        if let u = h.user, !u.isEmpty {
+            subtitle = "\(u)@\(subtitle)"
+        }
+        if let p = h.port {
+            subtitle = "\(subtitle):\(p)"
+        }
+        if h.name == subtitle {
+            return h.name
+        }
+        return "\(h.name) — \(subtitle)"
+    }
+
+    /// ssh config 의 한 Host 를 현재 폼에 반영한다.
+    /// IdentityFile 이 있으면 그 파일을 자동으로 첨부 시스템에 import 하고 keyfile 모드로 전환한다.
+    private func applySSHConfigHost(_ h: SSHConfigHost) {
+        host = h.effectiveHost
+        if let p = h.port {
+            portText = String(p)
+        } else {
+            portText = ""
+        }
+        if let u = h.user {
+            username = u
+        } else {
+            username = ""
+        }
+        if let keyPath = h.identityFilePath {
+            let url = URL(fileURLWithPath: keyPath)
+            if FileManager.default.fileExists(atPath: url.path) {
+                // ingestKeyfile 이 첨부 시스템에 import + keyAttachmentId 설정
+                ingestKeyfile(from: url)
+                sshAuth = .keyfile
+            } else {
+                sshAuth = .keyfile
+                alertMessage = "IdentityFile 경로의 파일을 찾을 수 없습니다:\n\(keyPath)\n\"키파일 선택…\" 으로 직접 지정해주세요."
+            }
+        } else {
+            // IdentityFile 미지정 → 패스워드 모드로
+            sshAuth = .password
         }
     }
 

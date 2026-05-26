@@ -23,6 +23,7 @@
 - **SSH**: 인증 방식 선택 — 키파일(첨부 시스템에 저장, 실행 시 평문 임시 + chmod 600) 또는 패스워드
   - 더블클릭 → Terminal 새 창에서 `ssh user@host -p port [-i keyfile]`
   - 패스워드 모드는 자동입력이 표준 ssh 에서 불가하므로, **패스워드를 클립보드에 자동 복사** + 안내 echo 가 ssh 앞에 붙음 (사용자는 프롬프트에서 ⌘V)
+  - **`~/.ssh/config` 자동 인식**: SSH 폼 상단의 메뉴에서 등록된 Host 를 선택하면 HostName/Port/User/IdentityFile 이 폼에 채워짐. IdentityFile 은 PathDock 첨부 시스템으로 자동 import (10MB 상한, 암호화 모드면 자동 암호화). 와일드카드(`Host *`) / `Match` / `Include` 는 제외
 - **VNC**: 패스워드 옵션만
   - 더블클릭 → `open "vnc://[user[:pass]@]host[:port]"` 로 macOS 화면 공유 / 등록된 vnc 핸들러 호출
   - 사용자명/패스워드는 percent-encoding 으로 안전하게 escape

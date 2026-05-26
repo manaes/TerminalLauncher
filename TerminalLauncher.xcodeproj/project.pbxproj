@@ -23,12 +23,13 @@
 		A100000000000000000000BE /* UnlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000AE /* UnlockView.swift */; };
 		A100000000000000000000BF /* DraggableCommandEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000AF /* DraggableCommandEditor.swift */; };
 		A100000000000000000000C0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000B0 /* SettingsView.swift */; };
+		A100000000000000000000C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000D1 /* Assets.xcassets */; };
 		A100000000000000000000C3 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000C5 /* ExportService.swift */; };
 		A100000000000000000000C4 /* ImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000C6 /* ImportService.swift */; };
 		A100000000000000000000C7 /* ExportPasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000C8 /* ExportPasswordSheet.swift */; };
 		A100000000000000000000C9 /* ImportPasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000CA /* ImportPasswordSheet.swift */; };
 		A100000000000000000000D5 /* RemoteLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000D6 /* RemoteLauncher.swift */; };
-		A100000000000000000000C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000D1 /* Assets.xcassets */; };
+		A100000000000000000000D7 /* SSHConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000D8 /* SSHConfigParser.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,10 +53,11 @@
 		A100000000000000000000C6 /* ImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportService.swift; sourceTree = "<group>"; };
 		A100000000000000000000C8 /* ExportPasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportPasswordSheet.swift; sourceTree = "<group>"; };
 		A100000000000000000000CA /* ImportPasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportPasswordSheet.swift; sourceTree = "<group>"; };
-		A100000000000000000000D6 /* RemoteLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteLauncher.swift; sourceTree = "<group>"; };
 		A100000000000000000000D1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A100000000000000000000D2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A100000000000000000000D3 /* PathDock.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PathDock.entitlements; sourceTree = "<group>"; };
+		A100000000000000000000D6 /* RemoteLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteLauncher.swift; sourceTree = "<group>"; };
+		A100000000000000000000D8 /* SSHConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConfigParser.swift; sourceTree = "<group>"; };
 		A100000000000000000000F1 /* PathDock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PathDock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -117,6 +119,7 @@
 			children = (
 				A100000000000000000000A4 /* TerminalLauncher.swift */,
 				A100000000000000000000D6 /* RemoteLauncher.swift */,
+				A100000000000000000000D8 /* SSHConfigParser.swift */,
 				A100000000000000000000AA /* CryptoService.swift */,
 				A100000000000000000000C5 /* ExportService.swift */,
 				A100000000000000000000C6 /* ImportService.swift */,
@@ -247,6 +250,7 @@
 				A100000000000000000000C7 /* ExportPasswordSheet.swift in Sources */,
 				A100000000000000000000C9 /* ImportPasswordSheet.swift in Sources */,
 				A100000000000000000000D5 /* RemoteLauncher.swift in Sources */,
+				A100000000000000000000D7 /* SSHConfigParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -372,6 +376,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = PathDock/Resources/PathDock.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -399,6 +404,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = PathDock/Resources/PathDock.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;

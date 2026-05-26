@@ -684,6 +684,188 @@ describe("buildVncURL: 빈 host 거부") {
     expect(buildVncURLMirror(host: "   ", port: nil, username: nil, password: nil) == nil, "공백 host 는 nil")
 }
 
+// MARK: - SSHConfigParser Mirror
+
+struct SSHConfigHostMirror: Equatable {
+    let name: String
+    let hostName: String?
+    let port: Int?
+    let user: String?
+    let identityFilePath: String?
+}
+
+enum SSHConfigParserMirror {
+    static func parse(_ text: String) -> [SSHConfigHostMirror] {
+        var hosts: [SSHConfigHostMirror] = []
+        var currentNames: [String] = []
+        var hostName: String?
+        var port: Int?
+        var user: String?
+        var identity: String?
+
+        func flush() {
+            for name in currentNames where !name.contains("*") && !name.contains("?") {
+                hosts.append(SSHConfigHostMirror(
+                    name: name, hostName: hostName, port: port,
+                    user: user, identityFilePath: identity
+                ))
+            }
+            currentNames = []
+            hostName = nil
+            port = nil
+            user = nil
+            identity = nil
+        }
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let stripped = stripInlineComment(rawLine).trimmingCharacters(in: .whitespaces)
+            if stripped.isEmpty { continue }
+            let (key, value) = splitKeyValue(stripped)
+            guard let key = key, let value = value, !value.isEmpty else { continue }
+            let kl = key.lowercased()
+            if kl == "include" || kl == "match" { flush(); continue }
+            if kl == "host" {
+                flush()
+                currentNames = value
+                    .components(separatedBy: .whitespaces)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                continue
+            }
+            if currentNames.isEmpty { continue }
+            switch kl {
+            case "hostname": hostName = value
+            case "port":     port = Int(value)
+            case "user":     user = value
+            case "identityfile":
+                identity = NSString(string: stripQuotes(value)).expandingTildeInPath
+            default: break
+            }
+        }
+        flush()
+        return hosts
+    }
+
+    private static func stripInlineComment(_ s: String) -> String {
+        var inQ = false
+        var out = ""
+        for ch in s {
+            if ch == "\"" { inQ.toggle() }
+            if ch == "#" && !inQ { break }
+            out.append(ch)
+        }
+        return out
+    }
+
+    private static func splitKeyValue(_ line: String) -> (String?, String?) {
+        if let eq = line.firstIndex(of: "=") {
+            let firstWS = line.firstIndex { $0 == " " || $0 == "\t" }
+            if firstWS == nil || eq < firstWS! {
+                let key = String(line[..<eq]).trimmingCharacters(in: .whitespaces)
+                let value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+                return (key, stripQuotes(value))
+            }
+        }
+        let parts = line.split(maxSplits: 1, omittingEmptySubsequences: true) { $0 == " " || $0 == "\t" }
+        if parts.count == 2 {
+            return (String(parts[0]), stripQuotes(String(parts[1]).trimmingCharacters(in: .whitespaces)))
+        }
+        return (parts.first.map { String($0) }, nil)
+    }
+
+    private static func stripQuotes(_ s: String) -> String {
+        guard s.count >= 2, s.hasPrefix("\""), s.hasSuffix("\"") else { return s }
+        return String(s.dropFirst().dropLast())
+    }
+}
+
+describe("SSHConfig: 기본 host 블록") {
+    let cfg = """
+    Host myserver
+        HostName 1.2.3.4
+        User ubuntu
+        Port 2222
+        IdentityFile ~/.ssh/id_rsa
+    """
+    let hosts = SSHConfigParserMirror.parse(cfg)
+    expectEqual(hosts.count, 1, "단일 Host 블록")
+    if let h = hosts.first {
+        expectEqual(h.name, "myserver", "Host 이름")
+        expectEqual(h.hostName, "1.2.3.4", "HostName")
+        expectEqual(h.user, "ubuntu", "User")
+        expectEqual(h.port, 2222, "Port")
+        let expandedIdentity = NSString(string: "~/.ssh/id_rsa").expandingTildeInPath
+        expectEqual(h.identityFilePath, expandedIdentity, "IdentityFile ~ 확장")
+    }
+}
+
+describe("SSHConfig: 와일드카드 / Match / Include 제외") {
+    let cfg = """
+    # 글로벌 설정
+    Host *
+        ServerAliveInterval 30
+
+    Match host *.example.com
+        User dev
+
+    Include ~/.ssh/include.conf
+
+    Host a b
+        HostName host-ab.example.com
+    """
+    let hosts = SSHConfigParserMirror.parse(cfg)
+    expectEqual(hosts.count, 2, "Host * 제외, a, b 만 산출")
+    let names = hosts.map { $0.name }
+    expect(names.contains("a"), "a 포함")
+    expect(names.contains("b"), "b 포함")
+    expect(!names.contains("*"), "와일드카드 제외")
+    // a, b 둘 다 같은 HostName 사용
+    for h in hosts {
+        expectEqual(h.hostName, "host-ab.example.com", "공유 HostName")
+    }
+}
+
+describe("SSHConfig: key=value 형태 + 주석 + 큰따옴표") {
+    let cfg = """
+    Host quoted
+        HostName="server with space.example.com"  # 주석
+        Port=22
+        User="user one"
+    """
+    let hosts = SSHConfigParserMirror.parse(cfg)
+    expectEqual(hosts.count, 1, "1개")
+    if let h = hosts.first {
+        expectEqual(h.hostName, "server with space.example.com", "큰따옴표 벗기기")
+        expectEqual(h.port, 22, "Port=22")
+        expectEqual(h.user, "user one", "user 값 보존")
+    }
+}
+
+describe("SSHConfig: 빈 입력 / 글로벌만") {
+    expectEqual(SSHConfigParserMirror.parse("").count, 0, "빈 텍스트는 0건")
+    expectEqual(
+        SSHConfigParserMirror.parse("HostName foo\nUser bar").count, 0,
+        "Host 블록 밖 키만 있으면 0건"
+    )
+}
+
+describe("SSHConfig: 다중 블록 + 누락 필드") {
+    let cfg = """
+    Host alpha
+        HostName a.example.com
+    Host beta
+        HostName b.example.com
+        User root
+    """
+    let hosts = SSHConfigParserMirror.parse(cfg)
+    expectEqual(hosts.count, 2, "2건")
+    if hosts.count == 2 {
+        expectEqual(hosts[0].name, "alpha", "첫 번째 Host name")
+        expect(hosts[0].user == nil, "alpha 는 user 없음")
+        expectEqual(hosts[1].user, "root", "beta 의 user")
+    }
+}
+
 // MARK: - 결과 출력
 
 print("")
