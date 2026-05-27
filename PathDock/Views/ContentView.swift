@@ -22,8 +22,9 @@ struct ContentView: View {
     /// 실행 실패 알림 표시용
     @State private var launchError: IdentifiableError?
 
-    /// 폴링 트리거 (2초마다 +1 — UI 리렌더 유도용)
-    @State private var pollTick: Int = 0
+    /// 현재 살아있는 iTerm2 세션 id 캐시. 2초 폴링에서 일괄 조회로 1회 갱신한다.
+    /// 리스트 인디케이터(isSessionAlive)는 이 캐시만 읽어 AppleScript 호출을 피한다.
+    @State private var aliveIds: Set<String> = []
     /// 폴링 타이머 publisher (autoconnect 후 매 2초마다 발화)
     private let pollTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
 
@@ -105,8 +106,12 @@ struct ContentView: View {
         .onReceive(pollTimer) { _ in
             // 윈도우 비활성 시 폴링 일시정지
             guard scenePhase == .active else { return }
-            pollTick &+= 1
-            validateAllSessions()
+            refreshAliveSessions()
+        }
+        .onAppear { refreshAliveSessions() }
+        .onChange(of: scenePhase) { phase in
+            // 다시 활성화되면 즉시 1회 갱신 (2초 기다리지 않도록)
+            if phase == .active { refreshAliveSessions() }
         }
     }
 
@@ -176,13 +181,12 @@ struct ContentView: View {
         }
     }
 
-    /// 현재 entry 의 세션이 살아있는지 (백엔드 + SessionStore + isAlive 의 합집합).
-    /// pollTick 의 영향을 받아 2초마다 재평가된다.
+    /// 현재 entry 의 세션이 살아있는지 — aliveIds 캐시만 조회한다 (AppleScript 호출 없음).
+    /// 캐시는 refreshAliveSessions() 가 2초마다 / scenePhase 활성 전환 시 갱신한다.
     private func isSessionAlive(for entry: PathEntry) -> Bool {
-        _ = pollTick // tick 의존성을 명시적으로 표기 (옵티마이저가 제거하지 않도록)
         guard preferencesStore.prefs.terminalBackend == .iterm2 else { return false }
         guard let s = sessionStore.sessions[entry.id] else { return false }
-        return makeLauncher().isAlive(s)
+        return aliveIds.contains(s.sessionId)
     }
 
     /// 더블클릭/메뉴 "실행" — 살아있는 세션이 있으면 activate, 없으면 새 세션.
@@ -255,18 +259,20 @@ struct ContentView: View {
         }
     }
 
-    /// 폴링 콜백 — SessionStore 의 모든 매핑을 isAlive 로 검사해 dead 면 폐기.
-    private func validateAllSessions() {
+    /// 폴링 콜백 — 살아있는 세션 id 를 일괄 1회 조회해 캐시(aliveIds)를 갱신하고,
+    /// 매핑돼 있지만 죽은 세션은 폐기한다. (AppleScript 호출은 세션 수와 무관하게 1회)
+    private func refreshAliveSessions() {
         guard preferencesStore.prefs.terminalBackend == .iterm2 else {
-            // Terminal 백엔드면 세션 추적 의미 없음 — 매핑이 있어도 그대로 둔다 (백엔드 토글 시 ContentView 가 그 안에서 clearAll 호출)
+            // Terminal 백엔드면 세션 추적 의미 없음 — 캐시만 비운다.
+            if !aliveIds.isEmpty { aliveIds = [] }
             return
         }
-        let launcher = makeLauncher()
+        let ids = makeLauncher().aliveSessionIds()
+        aliveIds = ids
+        // 매핑돼 있지만 더 이상 살아있지 않은 세션은 폐기
         var deadIds: [UUID] = []
-        for (entryId, session) in sessionStore.sessions {
-            if !launcher.isAlive(session) {
-                deadIds.append(entryId)
-            }
+        for (entryId, session) in sessionStore.sessions where !ids.contains(session.sessionId) {
+            deadIds.append(entryId)
         }
         for id in deadIds {
             sessionStore.clear(entryId: id)

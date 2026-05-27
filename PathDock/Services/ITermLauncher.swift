@@ -45,23 +45,22 @@ struct ITermLauncher: Launcher {
             shellCommand = TerminalLauncher.buildShellCommand(path: resolvedPath, commands: prepared.commands)
 
         case .remoteSSH:
-            // SSH 셸 명령은 TerminalLauncher 헬퍼를 재사용하되, iTerm2 에선 안내 echo 는 항상 끈다.
-            // - 자동 입력 ON : 패스워드는 AppleScript write text 로 입력. 클립보드/echo 모두 X.
-            // - 자동 입력 OFF: 패스워드만 클립보드에 복사해 사용자가 ⌘V. echo 안내는 여전히 X
-            //   (iTerm2 새 창에 안내 줄이 떠 있으면 어색하다).
+            // SSH 셸 명령은 TerminalLauncher 의 순수 합성 결과를 그대로 쓴다 (echo/클립보드 미포함).
+            // 패스워드 전달은 iTerm2 정책에 맞게 여기서 결정한다.
+            // - 자동 입력 ON : AppleScript write text 로 입력 (클립보드/echo 모두 X)
+            // - 자동 입력 OFF: 패스워드만 클립보드에 복사해 사용자가 ⌘V (echo 는 X — 새 창에 안내 줄이 어색)
             let auth = entry.auth ?? .password
-            let autoType = prefs.itermAutoTypePassword
-            if autoType,
-               auth == .password,
-               let pw = entry.password,
-               !pw.isEmpty {
-                autoTypePassword = pw
+            if auth == .password {
+                if prefs.itermAutoTypePassword,
+                   let pw = entry.password, !pw.isEmpty {
+                    autoTypePassword = pw
+                } else {
+                    _ = TerminalLauncher.copyPasswordToClipboardIfNeeded(for: entry)
+                }
             }
             shellCommand = try TerminalLauncher.prepareSshShellCommand(
                 entry: entry,
-                attachmentStore: attachmentStore,
-                copyPasswordToClipboard: !autoType,
-                includeEchoLine: false
+                attachmentStore: attachmentStore
             )
 
         case .remoteVNC:
@@ -112,6 +111,34 @@ struct ITermLauncher: Launcher {
             return false
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+
+    @MainActor
+    func aliveSessionIds() -> Set<String> {
+        // iTerm 이 실행 중이 아니면 살아있는 세션도 없음 — 불필요하게 깨우지 않는다.
+        guard isITermRunning() else { return [] }
+        // 모든 윈도우/탭/세션의 id 를 줄바꿈으로 이어 한 번에 수집한다.
+        let script = """
+        tell application "iTerm"
+            set outIds to ""
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        set outIds to outIds & (id of s) & "\\n"
+                    end repeat
+                end repeat
+            end repeat
+            return outIds
+        end tell
+        """
+        guard let result = try? runAppleScriptReturningString(script) else {
+            return []
+        }
+        let ids = result
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return Set(ids)
     }
 
     @MainActor

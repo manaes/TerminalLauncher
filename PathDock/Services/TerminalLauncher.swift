@@ -111,28 +111,49 @@ enum TerminalLauncher {
     /// 동작:
     /// - keyfile 모드: 키파일을 decrypted/ 임시폴더로 풀고 0600 권한을 적용, `ssh -i <키파일>` 명령 합성
     /// - password 모드: 패스워드를 NSPasteboard 에 자동 복사하고, 안내 echo + ssh 명령 합성
+    ///
+    /// 패스워드 클립보드 복사·안내 echo 는 Terminal.app 백엔드 정책이므로 이 메서드 안에서 처리한다.
+    /// (iTerm2 백엔드는 prepareSshShellCommand 순수 결과를 직접 쓰고 자동 입력/클립보드를 자체 결정한다.)
     @MainActor
     static func launchSSH(_ entry: PathEntry, attachmentStore: AttachmentStore) throws {
         guard entry.kind == .remoteSSH else {
             throw LaunchError.invalidRemoteConfig("SSH 타입이 아닙니다. (kind=\(entry.kind.rawValue))")
         }
-        let shellCommand = try prepareSshShellCommand(entry: entry, attachmentStore: attachmentStore)
+        let ssh = try prepareSshShellCommand(entry: entry, attachmentStore: attachmentStore)
+        // Terminal.app 백엔드: password 모드면 클립보드 복사 + 안내 echo 를 ssh 앞에 붙인다.
+        var shellCommand = ssh
+        if copyPasswordToClipboardIfNeeded(for: entry) {
+            shellCommand = "\(clipboardPasswordNoticeEcho) && \(ssh)"
+        }
         let script = terminalScript(for: shellCommand)
         try runAppleScript(script)
     }
 
-    /// SSH 항목을 Terminal/iTerm2 에서 실행할 단일 셸 명령 문자열로 합성한다.
-    /// - parameter copyPasswordToClipboard: password 모드일 때 패스워드를 NSPasteboard 에 자동 복사할지 여부.
-    ///   iTerm2 자동 입력 모드에서는 false (불필요).
-    /// - parameter includeEchoLine: ssh 실행 직전에 안내 echo 줄을 합성할지 여부.
-    ///   iTerm2 는 자동 입력 또는 별도 트레이를 사용하므로 안내 줄이 노이즈라 false.
-    /// - returns: `[echo '...' &&] ssh user@host -p port [-i key]` 형태
+    /// SSH password 모드 항목의 패스워드를 NSPasteboard 에 복사한다.
+    /// - returns: 실제로 복사했으면 true (SSH password 모드 + 패스워드가 비어있지 않을 때)
+    @MainActor
+    static func copyPasswordToClipboardIfNeeded(for entry: PathEntry) -> Bool {
+        guard entry.kind == .remoteSSH,
+              (entry.auth ?? .password) == .password,
+              let pw = entry.password, !pw.isEmpty else {
+            return false
+        }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(pw, forType: .string)
+        return true
+    }
+
+    /// 클립보드에 패스워드를 복사했을 때 ssh 앞에 붙이는 안내 echo 줄.
+    static let clipboardPasswordNoticeEcho = "echo '🔑 패스워드가 클립보드에 복사되었습니다. 프롬프트에서 ⌘V 로 붙여넣으세요.'"
+
+    /// SSH 항목을 실행할 순수 ssh 셸 명령 문자열을 합성한다.
+    /// 부수효과(클립보드 복사) / 안내 echo 는 포함하지 않는다 — 백엔드가 결정한다.
+    /// - returns: `ssh user@host -p port [-i key] [-oKey=Value ...]` 형태
     @MainActor
     static func prepareSshShellCommand(
         entry: PathEntry,
-        attachmentStore: AttachmentStore,
-        copyPasswordToClipboard: Bool = true,
-        includeEchoLine: Bool = true
+        attachmentStore: AttachmentStore
     ) throws -> String {
         // 1) host 검증
         let host = (entry.host ?? "").trimmingCharacters(in: .whitespaces)
@@ -143,9 +164,8 @@ enum TerminalLauncher {
         let username = (entry.username ?? "").trimmingCharacters(in: .whitespaces)
         let userHost: String = username.isEmpty ? host : "\(username)@\(host)"
 
-        // 2) 인증 분기
+        // 2) 인증 분기 (keyfile 모드만 명령 합성에 영향. password 는 백엔드가 별도 처리)
         let auth = entry.auth ?? .password
-        var prefixEchoLine: String? = nil   // ssh 실행 직전 사용자 안내
         var keyfileArg: String? = nil       // -i <키파일경로>
 
         switch auth {
@@ -183,15 +203,9 @@ enum TerminalLauncher {
             keyfileArg = target.path
 
         case .password:
-            // 패스워드 자동 클립보드 복사 (옵션, 있을 때만)
-            if copyPasswordToClipboard, let pw = entry.password, !pw.isEmpty {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(pw, forType: .string)
-                if includeEchoLine {
-                    prefixEchoLine = "echo '🔑 패스워드가 클립보드에 복사되었습니다. 프롬프트에서 ⌘V 로 붙여넣으세요.'"
-                }
-            }
+            // password 모드는 ssh 명령 합성에 영향을 주지 않는다.
+            // (클립보드 복사 / 자동 입력 / 안내 echo 는 백엔드가 결정)
+            break
         }
 
         // 3) ssh 명령 합성
@@ -208,12 +222,7 @@ enum TerminalLauncher {
                 sshParts.append(opt)
             }
         }
-        let sshCommand = sshParts.joined(separator: " ")
-
-        if let echoLine = prefixEchoLine {
-            return "\(echoLine) && \(sshCommand)"
-        }
-        return sshCommand
+        return sshParts.joined(separator: " ")
     }
 
     /// 첨부 토큰을 평문 경로로 치환한 명령어 배열 반환.

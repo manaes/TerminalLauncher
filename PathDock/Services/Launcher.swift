@@ -18,8 +18,15 @@ protocol Launcher {
     func launch(_ entry: PathEntry, attachmentStore: AttachmentStore, prefs: Preferences) throws -> ITermSession?
 
     /// 세션이 살아있는지 확인 (Terminal.app 백엔드는 항상 false).
+    /// - note: 단건 정확 검사용. 폴링/렌더에는 aliveSessionIds() 의 일괄 결과를 캐시해 쓰는 것을 권장.
     @MainActor
     func isAlive(_ session: ITermSession) -> Bool
+
+    /// 현재 살아있는 모든 세션의 sessionId 를 한 번의 호출로 수집한다.
+    /// 폴링/리스트 인디케이터에서 세션마다 isAlive 를 호출하지 않도록 일괄 조회를 제공한다.
+    /// Terminal.app 백엔드는 세션 추적을 안 하므로 빈 집합.
+    @MainActor
+    func aliveSessionIds() -> Set<String>
 
     /// 살아있는 세션을 앞으로 가져온다 (Terminal.app 백엔드는 throw).
     @MainActor

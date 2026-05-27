@@ -36,6 +36,12 @@ struct TerminalAppLauncher: Launcher {
     }
 
     @MainActor
+    func aliveSessionIds() -> Set<String> {
+        // 세션 추적 미지원 → 빈 집합.
+        return []
+    }
+
+    @MainActor
     func activate(_ session: ITermSession) throws {
         throw LaunchError.backendDoesNotSupportSessionTracking
     }
