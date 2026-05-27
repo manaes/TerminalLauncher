@@ -259,23 +259,31 @@ struct ContentView: View {
         }
     }
 
-    /// 폴링 콜백 — 살아있는 세션 id 를 일괄 1회 조회해 캐시(aliveIds)를 갱신하고,
+    /// 살아있는 세션 id 를 일괄 1회 조회해 캐시(aliveIds)를 갱신하고,
     /// 매핑돼 있지만 죽은 세션은 폐기한다. (AppleScript 호출은 세션 수와 무관하게 1회)
+    ///
+    /// ⚠️ 재진입 방지: NSAppleScript 동기 실행은 내부적으로 이벤트 루프를 돌리므로,
+    ///    SwiftUI 뷰 평가/업데이트 콜스택(onAppear, onChange, List diff 등) 도중에
+    ///    실행하면 AttributeGraph 가 재진입 precondition 위반으로 abort 한다.
+    ///    따라서 실제 AppleScript 호출은 항상 다음 runloop turn(main.async)에서 수행한다.
     private func refreshAliveSessions() {
         guard preferencesStore.prefs.terminalBackend == .iterm2 else {
             // Terminal 백엔드면 세션 추적 의미 없음 — 캐시만 비운다.
             if !aliveIds.isEmpty { aliveIds = [] }
             return
         }
-        let ids = makeLauncher().aliveSessionIds()
-        aliveIds = ids
-        // 매핑돼 있지만 더 이상 살아있지 않은 세션은 폐기
-        var deadIds: [UUID] = []
-        for (entryId, session) in sessionStore.sessions where !ids.contains(session.sessionId) {
-            deadIds.append(entryId)
-        }
-        for id in deadIds {
-            sessionStore.clear(entryId: id)
+        DispatchQueue.main.async {
+            // 현재 SwiftUI 업데이트 사이클이 끝난 뒤 안전하게 AppleScript 실행
+            let ids = makeLauncher().aliveSessionIds()
+            aliveIds = ids
+            // 매핑돼 있지만 더 이상 살아있지 않은 세션은 폐기
+            var deadIds: [UUID] = []
+            for (entryId, session) in sessionStore.sessions where !ids.contains(session.sessionId) {
+                deadIds.append(entryId)
+            }
+            for id in deadIds {
+                sessionStore.clear(entryId: id)
+            }
         }
     }
 }
