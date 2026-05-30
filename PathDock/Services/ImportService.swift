@@ -2,11 +2,21 @@
 //  ImportService.swift
 //  PathDock
 //
-//  `.pathdock` 파일을 복호화하여 현재 마스터키로 재암호화/병합한다.
-//  병합 only — 새 UUID 재할당, sortIndex 이어붙임, 명령 본문의 첨부 토큰도 새 uuid 로 치환.
+//  `.pathdock` 파일을 복호화하여 현재 마스터키로 재암호화하고, 병합(merge) 또는 덮어쓰기(replace)로 반영한다.
+//  새 UUID 재할당, 명령 본문의 첨부 토큰 / SSH 키파일 참조도 새 uuid 로 치환한다.
+//  - 복호화/디코드(KDF 포함)는 `decodeManifest` (백그라운드에서 호출 가능, nonisolated)
+//  - store 반영은 `apply(_:into:mode:)` (@MainActor)
 //
 
 import Foundation
+
+/// 복원/Import 반영 방식.
+enum ImportMode {
+    /// 기존 항목을 유지하고 새 항목을 이어붙인다.
+    case merge
+    /// 기존 항목/첨부를 모두 폐기하고 백업 내용으로 교체한다.
+    case replace
+}
 
 enum ImportError: LocalizedError {
     case ioFailure(String)
@@ -30,18 +40,10 @@ enum ImportError: LocalizedError {
 
 enum ImportService {
 
-    /// `.pathdock` 파일을 비밀번호로 복호화하고 store 에 병합한다.
-    @MainActor
-    static func importFile(at url: URL, password: String, into store: EntryStore) throws {
-        // 1) 파일 로드
-        let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch {
-            throw ImportError.ioFailure(String(describing: error))
-        }
-
-        // 2) magic + version + salt + nonce 분리
+    /// `.pathdock` 파일(바이트)을 비밀번호로 복호화해 Manifest 로 디코드한다.
+    /// KDF·복호화를 포함하므로 무거우며, store 에 손대지 않으므로 백그라운드에서 호출해도 된다.
+    static func decodeManifest(fileData data: Data, password: String) throws -> ExportManifest {
+        // 1) magic + version + salt + nonce 분리
         let headerLen = 8 + 2 + 16 + 12 // = 38
         guard data.count >= headerLen + 16 else {
             throw ImportError.truncated
@@ -62,10 +64,10 @@ enum ImportService {
         let ct = Data(ctAndTag.dropLast(16))
         let tag = Data(ctAndTag.suffix(16))
 
-        // 3) KDF → derived key
-        let key = try CryptoService.deriveKey(password: password, salt: salt, iterations: SecurityStore.kdfIterations)
+        // 2) KDF → derived key
+        let key = try CryptoService.deriveKey(password: password, salt: salt, iterations: CryptoService.defaultKDFIterations)
 
-        // 4) AES-GCM 복호화
+        // 3) AES-GCM 복호화
         let plaintext: Data
         do {
             plaintext = try CryptoService.decryptGCMSplit(nonce: nonce, ciphertext: ct, tag: tag, key: key)
@@ -73,17 +75,27 @@ enum ImportService {
             throw ImportError.decryptionFailed
         }
 
-        // 5) Manifest 디코드
-        let manifest: ExportManifest
+        // 4) Manifest 디코드
         do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            manifest = try decoder.decode(ExportManifest.self, from: plaintext)
+            return try decoder.decode(ExportManifest.self, from: plaintext)
         } catch {
             throw ImportError.manifestDecodeFailed(String(describing: error))
         }
+    }
 
-        // 6) 첨부 id 재할당 매핑
+    /// 디코드된 Manifest 를 store 에 반영한다.
+    /// - mode == .replace 면 기존 항목/첨부를 먼저 모두 폐기한다.
+    /// - 모든 첨부는 새 UUID 로 현재 마스터키로 재암호화되며, 명령 토큰과 SSH 키파일 참조(keyAttachmentId)도 remap 된다.
+    /// - 항목의 kind 와 원격 필드(host/port/username/auth/password/sshExtraOptions)를 온전히 보존한다.
+    @MainActor
+    static func apply(_ manifest: ExportManifest, into store: EntryStore, mode: ImportMode) {
+        if mode == .replace {
+            store.removeAllEntriesAndAttachments()
+        }
+
+        // 1) 첨부 id 재할당 매핑
         var idMap: [UUID: UUID] = [:]
         var dataById: [UUID: ExportManifest.ExportAttachment] = [:]
         for att in manifest.attachments {
@@ -91,18 +103,22 @@ enum ImportService {
             dataById[att.id] = att
         }
 
-        // 7) 현재 마스터키로 재암호화하여 attachmentStore 에 기록
-        for (oldId, newId) in idMap {
-            guard let att = dataById[oldId] else { continue }
+        // 2) 현재 마스터키로 재암호화하여 attachmentStore 에 기록
+        //    한 건 실패하면 idMap 에서 제거해 downstream(메타/토큰/keyAttachmentId) remap 에서 제외한다.
+        //    (EntryStore.duplicate 와 동일한 안전 처리 — dangling 참조 방지)
+        //    ※ idMap 을 순회 중 변경하면 안 되므로 키 스냅샷으로 순회한다.
+        for oldId in Array(idMap.keys) {
+            guard let newId = idMap[oldId], let att = dataById[oldId] else { continue }
             do {
                 try store.attachmentStore.write(id: newId, plaintext: att.data)
             } catch {
-                // 한 건 실패해도 나머지 import 는 진행. 사용자 정보 손실은 NSLog 로 남김.
+                // 실패한 첨부는 새 id 매핑을 폐기 → keyAttachmentId 는 nil 로, 메타/토큰 remap 에서 제외됨.
                 NSLog("[PathDock] import attachment 저장 실패 old=%@ err=%@", oldId.uuidString, String(describing: error))
+                idMap[oldId] = nil
             }
         }
 
-        // 8) entries 를 새 id 로 재구성하면서 명령어 토큰도 치환, 그리고 store.add 로 append
+        // 3) entries 를 새 id 로 재구성 (kind/원격 필드 보존, 토큰·키파일 참조 remap), store.add 로 append
         for srcEntry in manifest.entries {
             // 첨부 메타 새 id 로 재배열
             var newAtts: [Attachment] = []
@@ -128,6 +144,7 @@ enum ImportService {
 
             let newEntry = PathEntry(
                 id: UUID(),
+                kind: srcEntry.kind,
                 name: srcEntry.name,
                 path: srcEntry.path,
                 commands: newCommands,
@@ -135,9 +152,29 @@ enum ImportService {
                 note: srcEntry.note,
                 createdAt: srcEntry.createdAt,
                 updatedAt: Date(),
-                attachments: newAtts
+                attachments: newAtts,
+                host: srcEntry.host,
+                port: srcEntry.port,
+                username: srcEntry.username,
+                auth: srcEntry.auth,
+                password: srcEntry.password,
+                keyAttachmentId: srcEntry.keyAttachmentId.flatMap { idMap[$0] },
+                sshExtraOptions: srcEntry.sshExtraOptions
             )
             store.add(newEntry)
         }
+    }
+
+    /// `.pathdock` 파일을 비밀번호로 복호화하고 store 에 병합한다. (설정 화면의 파일 Import 진입점)
+    @MainActor
+    static func importFile(at url: URL, password: String, into store: EntryStore) throws {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw ImportError.ioFailure(String(describing: error))
+        }
+        let manifest = try decodeManifest(fileData: data, password: password)
+        apply(manifest, into: store, mode: .merge)
     }
 }

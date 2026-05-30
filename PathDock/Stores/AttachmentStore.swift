@@ -101,7 +101,9 @@ final class AttachmentStore {
     // MARK: - 읽기
 
     /// 디스크에서 평문 byte 를 읽어 반환.
-    func read(id: UUID) throws -> Data {
+    /// `nonisolated`: 불변 `let`(attachmentsDir/encrypted/key)만 읽고 순수 복호화를 수행하므로
+    /// 메인 액터 밖(백그라운드)에서 호출해도 안전하다. (백업 시 첨부 복호화로 UI 가 멈추지 않게 하기 위함)
+    nonisolated func read(id: UUID) throws -> Data {
         let url = attachmentsDir.appendingPathComponent(id.uuidString)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw AttachmentError.notFound(id: id)

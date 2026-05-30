@@ -34,7 +34,10 @@ enum CryptoError: LocalizedError {
 
 /// 32 바이트 AES-256 키를 mlock 으로 잠궈 보관하는 래퍼.
 /// 해제 시 0-fill 후 munlock 한다. 완전한 보장은 OS 스왑 정책에 의존한다.
-final class LockedData {
+///
+/// `@unchecked Sendable`: init 이후 buffer 는 사실상 불변이고 `withBytes`/`withSymmetricKey` 는 읽기 전용이며
+/// deinit 에서만 0-fill/해제하므로, 액터 경계를 넘겨도(예: KDF 를 백그라운드에서 수행 후 메인 액터로 전달) 안전하다.
+final class LockedData: @unchecked Sendable {
     /// 잠궈둔 바이트 수
     let length: Int
     /// 실제 메모리 포인터
@@ -88,6 +91,9 @@ final class LockedData {
 
 /// 암복호 헬퍼들. instance 가 필요 없는 순수 함수 집합.
 enum CryptoService {
+
+    /// 표준 PBKDF2 반복 횟수 (단일 출처). nonisolated 컨텍스트(Export/Import 봉인·복호)에서도 참조 가능.
+    static let defaultKDFIterations = 600_000
 
     // MARK: - 랜덤
 

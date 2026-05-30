@@ -39,8 +39,10 @@ final class SecurityStore: ObservableObject {
     static let keychainService = "com.wannypark.pathdock.masterkey"
     /// Keychain account
     static let keychainAccount = "default"
-    /// PBKDF2 반복 횟수
-    static let kdfIterations = 600_000
+    /// iCloud 백업 파일을 보호하는 비밀번호를 보관하는 Keychain service (마스터키와 별개 네임스페이스)
+    static let backupPasswordKeychainService = "com.wannypark.pathdock.backuppw"
+    /// PBKDF2 반복 횟수 (단일 출처는 CryptoService.defaultKDFIterations)
+    static let kdfIterations = CryptoService.defaultKDFIterations
 
     // MARK: - 상태
 
@@ -107,11 +109,20 @@ final class SecurityStore: ObservableObject {
         try saveConfig(cfg)
     }
 
+    /// 무거운 PBKDF2 를 메인 액터 밖(백그라운드 스레드)에서 수행한다. (UI 블로킹 방지)
+    /// LockedData 는 @unchecked Sendable 이므로 메인 액터로 안전하게 전달된다.
+    nonisolated static func deriveKeyOffMain(password: String, salt: Data, iterations: Int) async throws -> LockedData {
+        try await Task.detached(priority: .userInitiated) {
+            try CryptoService.deriveKey(password: password, salt: salt, iterations: iterations)
+        }.value
+    }
+
     /// 암호화 모드로 확정. 비밀번호로 derived key 를 만들고 verifier 저장, Keychain 에 키 저장.
     /// 호출 후 `derivedKey` 가 채워진다.
-    func setupEncrypted(password: String) throws {
+    /// - note: KDF(600k iter)는 백그라운드에서 수행하므로 호출부는 `await` 동안 메인 스레드가 블로킹되지 않는다.
+    func setupEncrypted(password: String) async throws {
         let salt = CryptoService.randomBytes(16)
-        let key = try CryptoService.deriveKey(password: password, salt: salt, iterations: Self.kdfIterations)
+        let key = try await Self.deriveKeyOffMain(password: password, salt: salt, iterations: Self.kdfIterations)
 
         // verifier: 임의 16바이트를 derived key 로 암호화 (분리 포맷으로 저장)
         let verifierPlain = CryptoService.randomBytes(16)
@@ -160,7 +171,8 @@ final class SecurityStore: ObservableObject {
     }
 
     /// 비밀번호로 잠금 해제 시도. 성공 시 derived key 를 Keychain 에 재저장한다.
-    func unlock(password: String) throws {
+    /// - note: KDF 는 백그라운드에서 수행한다.
+    func unlock(password: String) async throws {
         guard let cfg = config, cfg.mode == .encrypted,
               let salt = cfg.salt,
               let nonce = cfg.verifierNonce,
@@ -168,7 +180,7 @@ final class SecurityStore: ObservableObject {
               let tag = cfg.verifierTag else {
             throw SecurityStoreError.invalidConfig
         }
-        let key = try CryptoService.deriveKey(password: password, salt: salt, iterations: cfg.kdfIterations)
+        let key = try await Self.deriveKeyOffMain(password: password, salt: salt, iterations: cfg.kdfIterations)
         do {
             _ = try CryptoService.decryptGCMSplit(nonce: nonce, ciphertext: ct, tag: tag, key: key)
         } catch {
@@ -229,6 +241,57 @@ final class SecurityStore: ObservableObject {
         SecItemDelete(query as CFDictionary)
     }
 
+    // MARK: - iCloud 백업 비밀번호 (Keychain)
+
+    /// iCloud 백업 파일을 보호할 비밀번호를 Keychain 에 저장한다. (마스터키와 별개)
+    func storeBackupPassword(_ password: String) {
+        guard let data = password.data(using: .utf8) else { return }
+        let baseQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.backupPasswordKeychainService,
+            kSecAttrAccount as String: Self.keychainAccount
+        ]
+        SecItemDelete(baseQuery as CFDictionary)
+        var addAttrs = baseQuery
+        addAttrs[kSecValueData as String] = data
+        addAttrs[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        addAttrs[kSecAttrSynchronizable as String] = kCFBooleanFalse
+        let status = SecItemAdd(addAttrs as CFDictionary, nil)
+        if status != errSecSuccess {
+            NSLog("[PathDock] 백업 비밀번호 Keychain 저장 실패 status=%d", Int(status))
+        }
+    }
+
+    /// Keychain 에서 백업 비밀번호를 조회한다. 없으면 nil.
+    func loadBackupPassword() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.backupPasswordKeychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+            kSecReturnData as String: kCFBooleanTrue!,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Keychain 에서 백업 비밀번호 항목 삭제
+    func deleteBackupPassword() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.backupPasswordKeychainService,
+            kSecAttrAccount as String: Self.keychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    /// 백업 비밀번호가 Keychain 에 설정돼 있는지 여부
+    var hasBackupPassword: Bool {
+        loadBackupPassword() != nil
+    }
+
     // MARK: - 전체 초기화
 
     /// 모든 데이터(entries/attachments/decrypted/security.plist + Keychain) 폐기.
@@ -251,8 +314,9 @@ final class SecurityStore: ObservableObject {
         // security.plist 삭제
         try? fm.removeItem(at: configURL)
 
-        // Keychain 항목 삭제
+        // Keychain 항목 삭제 (마스터키 + 백업 비밀번호)
         deleteKeyFromKeychain()
+        deleteBackupPassword()
 
         // 메모리 상태 비움
         self.derivedKey = nil

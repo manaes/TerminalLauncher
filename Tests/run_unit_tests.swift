@@ -1020,6 +1020,219 @@ describe("ITermSession: dictionary 직렬화") {
     expectEqual(decoded.count, 2, "2건 round-trip")
 }
 
+// MARK: - Mirror: v3 복제 / Import 재구성 (kind·원격 필드 보존 + 첨부 id remap)
+//
+// 회귀 방지: 과거 EntryStore.duplicate / ImportService 가 kind 와 원격 필드를 누락해
+// SSH·VNC 항목이 빈 "명령어" 항목으로 변질되던 버그를 막는다.
+// 아래 미러는 수정된 production 로직(EntryStore.duplicate / ImportService.apply)의 계약을 복제한다.
+
+enum EntryKindMirror: String, Equatable { case command, remoteSSH, remoteVNC }
+enum RemoteAuthMirror: String, Equatable { case password, keyfile }
+
+struct AttachmentMirror: Equatable { var id: UUID; var originalName: String }
+
+struct RemoteEntryMirror: Equatable {
+    var id: UUID
+    var kind: EntryKindMirror
+    var name: String
+    var path: String
+    var commands: [String]
+    var attachments: [AttachmentMirror]
+    var host: String?
+    var port: Int?
+    var username: String?
+    var auth: RemoteAuthMirror?
+    var password: String?
+    var keyAttachmentId: UUID?
+    var sshExtraOptions: [String]?
+}
+
+/// 수정된 EntryStore.duplicate 의 계약을 복제: 모든 필드 보존 + 첨부 새 id + 토큰/keyId remap.
+func duplicateMirror(_ src: RemoteEntryMirror) -> RemoteEntryMirror {
+    var idMap: [UUID: UUID] = [:]
+    var newAtts: [AttachmentMirror] = []
+    for att in src.attachments {
+        let newId = UUID()
+        idMap[att.id] = newId
+        newAtts.append(AttachmentMirror(id: newId, originalName: att.originalName))
+    }
+    let newCommands = src.commands.map { line -> String in
+        var l = line
+        for (o, n) in idMap {
+            l = l.replacingOccurrences(of: "{{att:\(o.uuidString)}}", with: "{{att:\(n.uuidString)}}")
+        }
+        return l
+    }
+    return RemoteEntryMirror(
+        id: UUID(),
+        kind: src.kind,
+        name: src.name + " 복사본",
+        path: src.path,
+        commands: newCommands,
+        attachments: newAtts,
+        host: src.host,
+        port: src.port,
+        username: src.username,
+        auth: src.auth,
+        password: src.password,
+        keyAttachmentId: src.keyAttachmentId.flatMap { idMap[$0] },
+        sshExtraOptions: src.sshExtraOptions
+    )
+}
+
+/// 수정된 ImportService.apply 의 항목 재구성 계약을 복제(병합 기준): kind/원격 보존 + keyId·토큰 remap.
+func importRebuildMirror(_ src: RemoteEntryMirror) -> RemoteEntryMirror {
+    var idMap: [UUID: UUID] = [:]
+    var newAtts: [AttachmentMirror] = []
+    for att in src.attachments {
+        let newId = UUID()
+        idMap[att.id] = newId
+        newAtts.append(AttachmentMirror(id: newId, originalName: att.originalName))
+    }
+    let newCommands = src.commands.map { line -> String in
+        var l = line
+        for (o, n) in idMap {
+            l = l.replacingOccurrences(of: "{{att:\(o.uuidString)}}", with: "{{att:\(n.uuidString)}}")
+        }
+        return l
+    }
+    return RemoteEntryMirror(
+        id: UUID(),
+        kind: src.kind,
+        name: src.name,
+        path: src.path,
+        commands: newCommands,
+        attachments: newAtts,
+        host: src.host,
+        port: src.port,
+        username: src.username,
+        auth: src.auth,
+        password: src.password,
+        keyAttachmentId: src.keyAttachmentId.flatMap { idMap[$0] },
+        sshExtraOptions: src.sshExtraOptions
+    )
+}
+
+describe("duplicate: SSH 항목의 kind·원격 필드가 보존된다") {
+    let src = RemoteEntryMirror(
+        id: UUID(), kind: .remoteSSH, name: "prod", path: "",
+        commands: [], attachments: [],
+        host: "example.com", port: 2222, username: "ubuntu",
+        auth: .password, password: "s3cret", keyAttachmentId: nil,
+        sshExtraOptions: ["ServerAliveInterval 30"]
+    )
+    let copy = duplicateMirror(src)
+    expectEqual(copy.kind, .remoteSSH, "kind 보존")
+    expectEqual(copy.host, "example.com", "host 보존")
+    expectEqual(copy.port, 2222, "port 보존")
+    expectEqual(copy.username, "ubuntu", "username 보존")
+    expectEqual(copy.auth, .password, "auth 보존")
+    expectEqual(copy.password, "s3cret", "password 보존")
+    expectEqual(copy.sshExtraOptions ?? [], ["ServerAliveInterval 30"], "추가옵션 보존")
+    expect(copy.id != src.id, "새 id 발급")
+    expectEqual(copy.name, "prod 복사본", "이름에 복사본 접미사")
+}
+
+describe("duplicate: VNC 항목도 kind 보존") {
+    let src = RemoteEntryMirror(
+        id: UUID(), kind: .remoteVNC, name: "vnc-host", path: "",
+        commands: [], attachments: [],
+        host: "10.0.0.5", port: 5900, username: nil,
+        auth: nil, password: "pw", keyAttachmentId: nil, sshExtraOptions: nil
+    )
+    let copy = duplicateMirror(src)
+    expectEqual(copy.kind, .remoteVNC, "VNC kind 보존")
+    expectEqual(copy.host, "10.0.0.5", "host 보존")
+    expectEqual(copy.password, "pw", "password 보존")
+}
+
+describe("duplicate: 키파일 SSH 의 첨부/토큰/keyId remap") {
+    let keyId = UUID()
+    let src = RemoteEntryMirror(
+        id: UUID(), kind: .remoteSSH, name: "keyhost", path: "",
+        commands: [], attachments: [AttachmentMirror(id: keyId, originalName: "id_rsa")],
+        host: "h", port: nil, username: "u",
+        auth: .keyfile, password: nil, keyAttachmentId: keyId, sshExtraOptions: nil
+    )
+    let copy = duplicateMirror(src)
+    expectEqual(copy.kind, .remoteSSH, "kind 보존")
+    expectEqual(copy.auth, .keyfile, "keyfile 모드 보존")
+    expect(copy.attachments.count == 1, "첨부 1건 복제")
+    expect(copy.attachments.first?.id != keyId, "첨부 새 id")
+    expectEqual(copy.keyAttachmentId, copy.attachments.first?.id, "keyAttachmentId 가 새 첨부 id 로 remap")
+    expect(copy.keyAttachmentId != keyId, "keyAttachmentId 가 옛 id 가 아님")
+}
+
+describe("duplicate: 명령어 항목의 첨부 토큰이 새 id 로 remap") {
+    let attId = UUID()
+    let src = RemoteEntryMirror(
+        id: UUID(), kind: .command, name: "cmd", path: "~/x",
+        commands: ["cat {{att:\(attId.uuidString)}}"],
+        attachments: [AttachmentMirror(id: attId, originalName: "f.txt")],
+        host: nil, port: nil, username: nil, auth: nil, password: nil,
+        keyAttachmentId: nil, sshExtraOptions: nil
+    )
+    let copy = duplicateMirror(src)
+    let newId = copy.attachments.first!.id
+    expect(!copy.commands[0].contains(attId.uuidString), "옛 토큰 제거됨")
+    expect(copy.commands[0].contains(newId.uuidString), "새 토큰으로 치환됨")
+}
+
+describe("import 재구성: SSH 항목 kind·원격·keyId 보존") {
+    let keyId = UUID()
+    let src = RemoteEntryMirror(
+        id: UUID(), kind: .remoteSSH, name: "imp", path: "",
+        commands: [], attachments: [AttachmentMirror(id: keyId, originalName: "key")],
+        host: "srv", port: 22, username: "root",
+        auth: .keyfile, password: nil, keyAttachmentId: keyId,
+        sshExtraOptions: ["HostKeyAlgorithms +ssh-rsa"]
+    )
+    let rebuilt = importRebuildMirror(src)
+    expectEqual(rebuilt.kind, .remoteSSH, "kind 보존")
+    expectEqual(rebuilt.host, "srv", "host 보존")
+    expectEqual(rebuilt.auth, .keyfile, "auth 보존")
+    expectEqual(rebuilt.sshExtraOptions ?? [], ["HostKeyAlgorithms +ssh-rsa"], "추가옵션 보존")
+    expectEqual(rebuilt.keyAttachmentId, rebuilt.attachments.first?.id, "keyAttachmentId remap")
+    expect(rebuilt.id != src.id, "새 id")
+    expectEqual(rebuilt.name, "imp", "이름은 그대로(병합)")
+}
+
+// MARK: - Mirror: Preferences 신규 필드 하위호환 디코드
+//
+// 구버전 preferences.json(새 키 없음)도 디코드 시 기본값으로 채워져야 한다.
+
+struct PreferencesCompatMirror: Codable, Equatable {
+    var terminalBackend: String
+    var itermAutoTypePassword: Bool
+    var itermAutoTypeDelaySeconds: Double
+    var icloudBackupEnabled: Bool
+    var icloudAutoBackup: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case terminalBackend, itermAutoTypePassword, itermAutoTypeDelaySeconds
+        case icloudBackupEnabled, icloudAutoBackup
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.terminalBackend = (try? c.decode(String.self, forKey: .terminalBackend)) ?? "Terminal"
+        self.itermAutoTypePassword = (try? c.decode(Bool.self, forKey: .itermAutoTypePassword)) ?? true
+        self.itermAutoTypeDelaySeconds = (try? c.decode(Double.self, forKey: .itermAutoTypeDelaySeconds)) ?? 2.0
+        self.icloudBackupEnabled = (try? c.decode(Bool.self, forKey: .icloudBackupEnabled)) ?? false
+        self.icloudAutoBackup = (try? c.decode(Bool.self, forKey: .icloudAutoBackup)) ?? true
+    }
+}
+
+describe("Preferences: 구버전 JSON(새 키 없음) 하위호환 디코드") {
+    // terminalBackend / itermAutoTypePassword 만 있던 구 파일
+    let legacy = "{\"terminalBackend\":\"iTerm2\",\"itermAutoTypePassword\":false}"
+    let decoded = try! JSONDecoder().decode(PreferencesCompatMirror.self, from: legacy.data(using: .utf8)!)
+    expectEqual(decoded.terminalBackend, "iTerm2", "기존 backend 유지")
+    expectEqual(decoded.itermAutoTypePassword, false, "기존 토글 유지")
+    expectEqual(decoded.itermAutoTypeDelaySeconds, 2.0, "새 delay 는 기본값 2.0")
+    expectEqual(decoded.icloudBackupEnabled, false, "새 icloud 토글 기본 false")
+    expectEqual(decoded.icloudAutoBackup, true, "새 자동백업 기본 true")
+}
+
 // MARK: - 결과 출력
 
 print("")

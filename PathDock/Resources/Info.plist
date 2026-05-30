@@ -30,5 +30,17 @@
 	<string>등록된 경로로 이동한 Terminal.app 새 창을 자동으로 열기 위해 자동화 권한이 필요합니다.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.wannypark.pathdock</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+			<key>NSUbiquitousContainerName</key>
+			<string>PathDock</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

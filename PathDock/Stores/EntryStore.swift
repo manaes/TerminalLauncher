@@ -179,24 +179,80 @@ final class EntryStore: ObservableObject {
         scheduleSave()
     }
 
-    /// 항목 복제 — 원본 바로 아래에 삽입한다. (첨부는 메타만 복사 X — 새 ID 가 필요해 별도 작업.
-    /// 단순화를 위해 첨부 자체는 복사하지 않고 메타 배열만 비운다.)
+    /// 항목 복제 — 원본 바로 아래에 삽입한다.
+    /// 모든 필드(kind / 원격 설정 / 첨부)를 온전히 깊은 복사한다.
+    /// 첨부는 새 UUID 로 디스크에 재기록하고, 명령어 본문의 `{{att:...}}` 토큰과 SSH 키파일 참조(keyAttachmentId)도
+    /// 새 id 로 remap 한다. (과거 버전은 kind/원격 필드를 누락해 SSH·VNC 복제 시 빈 명령어 항목으로 변질되는 버그가 있었음)
     func duplicate(id: UUID) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         let src = entries[idx]
+
+        // 첨부를 새 id 로 깊은 복사 (디스크 바이트까지 재기록)
+        var idMap: [UUID: UUID] = [:]
+        var newAtts: [Attachment] = []
+        for att in src.attachments {
+            let newId = UUID()
+            idMap[att.id] = newId
+            do {
+                let data = try attachmentStore.read(id: att.id)
+                try attachmentStore.write(id: newId, plaintext: data)
+                newAtts.append(Attachment(
+                    id: newId,
+                    originalName: att.originalName,
+                    sizeBytes: att.sizeBytes,
+                    addedAt: Date()
+                ))
+            } catch {
+                // 한 건 실패해도 나머지는 진행. (실패한 첨부는 메타/토큰 remap 에서 제외)
+                NSLog("[PathDock] duplicate 첨부 복사 실패 id=%@ err=%@", att.id.uuidString, String(describing: error))
+                idMap[att.id] = nil
+            }
+        }
+
+        // 명령어 본문 토큰 remap (성공적으로 복사된 첨부만)
+        let newCommands = src.commands.map { line -> String in
+            var replaced = line
+            for (oldId, newId) in idMap {
+                replaced = replaced.replacingOccurrences(
+                    of: "{{att:\(oldId.uuidString)}}",
+                    with: "{{att:\(newId.uuidString)}}"
+                )
+            }
+            return replaced
+        }
+
         let copy = PathEntry(
             id: UUID(),
+            kind: src.kind,
             name: src.name + " 복사본",
             path: src.path,
-            commands: src.commands,
+            commands: newCommands,
             sortIndex: idx + 1,
             note: src.note,
             createdAt: Date(),
             updatedAt: Date(),
-            attachments: [] // 첨부는 복제하지 않음
+            attachments: newAtts,
+            host: src.host,
+            port: src.port,
+            username: src.username,
+            auth: src.auth,
+            password: src.password,
+            keyAttachmentId: src.keyAttachmentId.flatMap { idMap[$0] },
+            sshExtraOptions: src.sshExtraOptions
         )
         entries.insert(copy, at: idx + 1)
         reindex()
+        scheduleSave()
+    }
+
+    /// 모든 항목과 그 첨부를 디스크에서 폐기한다. (iCloud 복원의 "덮어쓰기" 모드에서 사용)
+    func removeAllEntriesAndAttachments() {
+        for entry in entries {
+            for att in entry.attachments {
+                attachmentStore.remove(id: att.id)
+            }
+        }
+        entries.removeAll()
         scheduleSave()
     }
 

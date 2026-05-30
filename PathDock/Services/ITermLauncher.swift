@@ -70,7 +70,11 @@ struct ITermLauncher: Launcher {
         }
 
         // iTerm2 새 창 생성 + 명령 실행 + id 반환
-        let ids = try createNewWindowAndRun(shellCommand: shellCommand, autoTypePassword: autoTypePassword)
+        let ids = try createNewWindowAndRun(
+            shellCommand: shellCommand,
+            autoTypePassword: autoTypePassword,
+            delaySeconds: prefs.itermAutoTypeDelaySeconds
+        )
         return ITermSession(
             id: entry.id,
             sessionId: ids.sessionId,
@@ -205,19 +209,22 @@ struct ITermLauncher: Launcher {
     }
 
     /// iTerm2 새 창을 생성하고 명령 실행 후 (sessionId, windowId) 를 반환.
-    /// autoTypePassword 가 있으면 delay 2초 후 write text 로 패스워드 + newline 입력.
+    /// autoTypePassword 가 있으면 delaySeconds 후 write text 로 패스워드 + newline 입력.
+    /// - parameter delaySeconds: ssh 프롬프트가 뜨길 기다리는 시간(초). prefs 에서 조정 가능(기본 2.0).
     @MainActor
-    private func createNewWindowAndRun(shellCommand: String, autoTypePassword: String?) throws -> (sessionId: String, windowId: String) {
+    private func createNewWindowAndRun(shellCommand: String, autoTypePassword: String?, delaySeconds: Double) throws -> (sessionId: String, windowId: String) {
         let cmdEsc = TerminalLauncher.escapeForAppleScriptDoubleQuoted(shellCommand)
 
         // 자동 입력 패스워드는 그 자체로 별도 write text 로 보내야 안전 (셸 명령에 합성하지 않음).
         let autoTypeBlock: String
         if let pw = autoTypePassword, !pw.isEmpty {
             let pwEsc = TerminalLauncher.escapeForAppleScriptDoubleQuoted(pw)
-            // ssh 가 프롬프트를 띄울 시간 확보 (휴리스틱 2초). newline 포함을 위해 별도 write text "" 가 아닌
+            // ssh 가 프롬프트를 띄울 시간 확보 (휴리스틱, 기본 2초이며 prefs 로 조정 가능). newline 포함을 위해
             // 단일 write text 의 끝에 임의 newline 을 명시적으로 더하기 어려워 두 줄로 처리.
+            // 음수/0 방지를 위해 최소 0.5초로 클램프.
+            let delay = max(0.5, delaySeconds)
             autoTypeBlock = """
-                delay 2.0
+                delay \(delay)
                 tell newSess
                     write text "\(pwEsc)"
                 end tell

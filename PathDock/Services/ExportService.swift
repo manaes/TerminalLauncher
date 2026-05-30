@@ -44,15 +44,15 @@ struct ExportManifest: Codable {
 
 enum ExportService {
 
-    /// Export 수행 — 현재 store 의 데이터를 사용자 입력 비밀번호로 암호화하여 outURL 에 쓴다.
-    @MainActor
-    static func export(store: EntryStore, password: String, to outURL: URL) throws {
-        // 1) Manifest 구성 — 첨부는 attachmentStore 로 평문 읽기
+    /// entries 스냅샷 + attachmentStore 로 Manifest 를 구성해 JSON 평문 바이트로 반환한다.
+    /// `attachmentStore.read` 는 nonisolated 이고 entries 는 값 스냅샷이므로 백그라운드에서 호출 가능하다.
+    /// (AttachmentStore 는 @MainActor 클래스라 암묵적으로 Sendable — 백그라운드 Task 로 안전하게 넘길 수 있다.)
+    nonisolated static func buildManifest(entries: [PathEntry], attachmentStore: AttachmentStore) throws -> Data {
         var exportAtts: [ExportManifest.ExportAttachment] = []
-        for entry in store.entries {
+        for entry in entries {
             for att in entry.attachments {
                 do {
-                    let data = try store.attachmentStore.read(id: att.id)
+                    let data = try attachmentStore.read(id: att.id)
                     exportAtts.append(ExportManifest.ExportAttachment(
                         id: att.id,
                         originalName: att.originalName,
@@ -64,19 +64,29 @@ enum ExportService {
                 }
             }
         }
-        let manifest = ExportManifest(version: 1, entries: store.entries, attachments: exportAtts)
+        let manifest = ExportManifest(version: 1, entries: entries, attachments: exportAtts)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        let plaintext = try encoder.encode(manifest)
+        return try encoder.encode(manifest)
+    }
 
-        // 2) KDF → derived key
+    /// store 의 현재 데이터로 Manifest 평문 바이트를 구성한다. (entries 스냅샷을 메인에서 떠서 위임)
+    @MainActor
+    static func buildManifestPlaintext(store: EntryStore) throws -> Data {
+        try buildManifest(entries: store.entries, attachmentStore: store.attachmentStore)
+    }
+
+    /// Manifest 평문을 비밀번호로 봉인해 `.pathdock` 바이트로 만든다.
+    /// KDF(무거움)·암호화만 수행하므로 store 에 손대지 않으며 백그라운드에서 호출해도 된다.
+    static func sealManifest(plaintext: Data, password: String) throws -> Data {
+        // KDF → derived key
         let salt = CryptoService.randomBytes(16)
-        let key = try CryptoService.deriveKey(password: password, salt: salt, iterations: SecurityStore.kdfIterations)
+        let key = try CryptoService.deriveKey(password: password, salt: salt, iterations: CryptoService.defaultKDFIterations)
 
-        // 3) AES-GCM 한 번 암호화
+        // AES-GCM 한 번 암호화
         let parts = try CryptoService.encryptGCMSplit(plaintext: plaintext, key: key)
 
-        // 4) 최종 파일 작성
+        // 최종 파일 바이트 작성
         var out = Data()
         out.append(contentsOf: pathdockMagic)
         // version: u16 LE = 1
@@ -86,7 +96,21 @@ enum ExportService {
         out.append(parts.nonce)
         out.append(parts.ciphertext)
         out.append(parts.tag)
+        return out
+    }
 
+    /// store 의 데이터를 비밀번호로 암호화한 `.pathdock` 바이트로 반환한다.
+    /// (iCloud 백업 등 파일이 아닌 대상에 쓸 때 사용)
+    @MainActor
+    static func exportData(store: EntryStore, password: String) throws -> Data {
+        let plaintext = try buildManifestPlaintext(store: store)
+        return try sealManifest(plaintext: plaintext, password: password)
+    }
+
+    /// Export 수행 — 현재 store 의 데이터를 사용자 입력 비밀번호로 암호화하여 outURL 에 쓴다.
+    @MainActor
+    static func export(store: EntryStore, password: String, to outURL: URL) throws {
+        let out = try exportData(store: store, password: password)
         do {
             try out.write(to: outURL, options: [.atomic])
         } catch {

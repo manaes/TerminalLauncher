@@ -37,6 +37,9 @@
 		A100000000000000000000F3 /* Launcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F2 /* Launcher.swift */; };
 		A100000000000000000000F5 /* TerminalAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F4 /* TerminalAppLauncher.swift */; };
 		A100000000000000000000F7 /* ITermLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000000000000000000F6 /* ITermLauncher.swift */; };
+		A1000000000000000000FB01 /* CloudBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA01 /* CloudBackupService.swift */; };
+		A1000000000000000000FB02 /* CloudBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA02 /* CloudBackupStore.swift */; };
+		A1000000000000000000FB03 /* CloudBackupPasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA03 /* CloudBackupPasswordSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +76,9 @@
 		A100000000000000000000F2 /* Launcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Launcher.swift; sourceTree = "<group>"; };
 		A100000000000000000000F4 /* TerminalAppLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppLauncher.swift; sourceTree = "<group>"; };
 		A100000000000000000000F6 /* ITermLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ITermLauncher.swift; sourceTree = "<group>"; };
+		A1000000000000000000FA01 /* CloudBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudBackupService.swift; sourceTree = "<group>"; };
+		A1000000000000000000FA02 /* CloudBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudBackupStore.swift; sourceTree = "<group>"; };
+		A1000000000000000000FA03 /* CloudBackupPasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudBackupPasswordSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -128,6 +134,7 @@
 				A100000000000000000000AC /* AttachmentStore.swift */,
 				A100000000000000000000E3 /* PreferencesStore.swift */,
 				A100000000000000000000E7 /* SessionStore.swift */,
+				A1000000000000000000FA02 /* CloudBackupStore.swift */,
 			);
 			path = Stores;
 			sourceTree = "<group>";
@@ -144,6 +151,7 @@
 				A100000000000000000000F2 /* Launcher.swift */,
 				A100000000000000000000F4 /* TerminalAppLauncher.swift */,
 				A100000000000000000000F6 /* ITermLauncher.swift */,
+				A1000000000000000000FA01 /* CloudBackupService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -160,6 +168,7 @@
 				A100000000000000000000B0 /* SettingsView.swift */,
 				A100000000000000000000C8 /* ExportPasswordSheet.swift */,
 				A100000000000000000000CA /* ImportPasswordSheet.swift */,
+				A1000000000000000000FA03 /* CloudBackupPasswordSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -279,6 +288,9 @@
 				A100000000000000000000F3 /* Launcher.swift in Sources */,
 				A100000000000000000000F5 /* TerminalAppLauncher.swift in Sources */,
 				A100000000000000000000F7 /* ITermLauncher.swift in Sources */,
+				A1000000000000000000FB01 /* CloudBackupService.swift in Sources */,
+				A1000000000000000000FB02 /* CloudBackupStore.swift in Sources */,
+				A1000000000000000000FB03 /* CloudBackupPasswordSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

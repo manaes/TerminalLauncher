@@ -30,6 +30,8 @@ struct PathDockApp: App {
     @State private var sessionStore: SessionStore?
     /// 환경설정. ready 진입 시 생성. (rootDir 를 알기 위해 SecurityStore 의존)
     @State private var preferencesStore: PreferencesStore?
+    /// iCloud 백업 코디네이터. ready 진입 시 생성. (자동 백업 구독을 살아있게 유지)
+    @State private var cloudBackupStore: CloudBackupStore?
     /// 잠금 해제 실패 메시지 (UnlockView 에 전달)
     @State private var unlockError: String?
     /// 첫 실행 중 KDF 진행 표시 (활성화 시 spinner)
@@ -47,6 +49,7 @@ struct PathDockApp: App {
                     self.store = nil
                     self.sessionStore = nil
                     self.preferencesStore = nil
+                    self.cloudBackupStore = nil
                     self.phase = .firstRun
                 }
         }
@@ -56,12 +59,13 @@ struct PathDockApp: App {
         }
         // ⌘, 단축키로 자동 연결되는 Settings Scene
         Settings {
-            if let store = store, let sessionStore = sessionStore, let preferencesStore = preferencesStore {
+            if let store = store, let sessionStore = sessionStore, let preferencesStore = preferencesStore, let cloudBackupStore = cloudBackupStore {
                 SettingsView()
                     .environmentObject(store)
                     .environmentObject(security)
                     .environmentObject(sessionStore)
                     .environmentObject(preferencesStore)
+                    .environmentObject(cloudBackupStore)
             } else {
                 // ready 진입 전엔 의미 없으므로 빈 화면
                 Text("PathDock 이 아직 준비되지 않았습니다.")
@@ -153,26 +157,21 @@ struct PathDockApp: App {
             }
             return
         }
-        // 암호화 활성화: KDF 가 무거우므로 백그라운드에서 처리
+        // 암호화 활성화: KDF 가 무거우므로 setupEncrypted 내부에서 백그라운드로 수행한다.
+        // 여기서는 메인 액터 Task 로 호출하되, await 동안 메인 스레드가 풀려 spinner 가 정상 애니메이션된다.
         setupWorking = true
-        Task.detached(priority: .userInitiated) {
+        Task { @MainActor in
             do {
-                try await MainActor.run {
-                    try security.setupEncrypted(password: password)
-                }
-                await MainActor.run {
-                    setupWorking = false
-                    if let key = security.derivedKey {
-                        enterReady(encrypted: true, key: key, initialBackend: backend)
-                    } else {
-                        phase = .firstRun
-                    }
+                try await security.setupEncrypted(password: password)
+                setupWorking = false
+                if let key = security.derivedKey {
+                    enterReady(encrypted: true, key: key, initialBackend: backend)
+                } else {
+                    phase = .firstRun
                 }
             } catch {
                 NSLog("[PathDock] setupEncrypted 실패: %@", String(describing: error))
-                await MainActor.run {
-                    setupWorking = false
-                }
+                setupWorking = false
             }
         }
     }
@@ -180,24 +179,16 @@ struct PathDockApp: App {
     // MARK: - 잠금 해제
 
     private func tryUnlock(password: String) {
-        Task.detached(priority: .userInitiated) {
+        Task { @MainActor in
             do {
-                try await MainActor.run {
-                    try security.unlock(password: password)
-                }
-                await MainActor.run {
-                    if let key = security.derivedKey {
-                        enterReady(encrypted: true, key: key)
-                    }
+                try await security.unlock(password: password)
+                if let key = security.derivedKey {
+                    enterReady(encrypted: true, key: key)
                 }
             } catch let err as SecurityStoreError {
-                await MainActor.run {
-                    unlockError = err.errorDescription ?? "잠금 해제 실패"
-                }
+                unlockError = err.errorDescription ?? "잠금 해제 실패"
             } catch {
-                await MainActor.run {
-                    unlockError = error.localizedDescription
-                }
+                unlockError = error.localizedDescription
             }
         }
     }
@@ -220,6 +211,8 @@ struct PathDockApp: App {
         self.store = s
         self.sessionStore = sess
         self.preferencesStore = prefsStore
+        // iCloud 백업 코디네이터 생성 (자동 백업 구독 포함). store 변경을 관찰해 디바운스 백업.
+        self.cloudBackupStore = CloudBackupStore(store: s, security: security, prefs: prefsStore)
         self.phase = .ready
         // ready 진입 시 SessionStore 의 모든 매핑을 백엔드별 launcher 로 검증.
         // dead 매핑은 폐기. (현재 백엔드가 iterm2 일 때만 실질 검사)

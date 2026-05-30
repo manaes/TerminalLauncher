@@ -14,6 +14,7 @@ struct SettingsView: View {
     @EnvironmentObject private var security: SecurityStore
     @EnvironmentObject private var sessionStore: SessionStore
     @EnvironmentObject private var preferencesStore: PreferencesStore
+    @EnvironmentObject private var cloudBackup: CloudBackupStore
 
     /// 전체 초기화 확인 다이얼로그 표시 여부
     @State private var showResetConfirm = false
@@ -25,6 +26,10 @@ struct SettingsView: View {
     @State private var resultMessage: String?
     /// iTerm2 미설치 알럿 표시 여부
     @State private var showITermMissingAlert = false
+    /// iCloud 백업 비밀번호 설정 시트 표시 여부
+    @State private var showBackupPasswordSheet = false
+    /// iCloud 복원 모드 선택 다이얼로그 표시 여부
+    @State private var showRestoreDialog = false
 
     var body: some View {
         Form {
@@ -71,7 +76,24 @@ struct SettingsView: View {
             // iTerm2 백엔드 전용 옵션 섹션
             if preferencesStore.prefs.terminalBackend == .iterm2 {
                 Section("iTerm2") {
-                    Toggle("SSH 패스워드 자동 입력 (delay 2초)", isOn: $preferencesStore.prefs.itermAutoTypePassword)
+                    Toggle("SSH 패스워드 자동 입력", isOn: $preferencesStore.prefs.itermAutoTypePassword)
+                    if preferencesStore.prefs.itermAutoTypePassword {
+                        Stepper(
+                            value: $preferencesStore.prefs.itermAutoTypeDelaySeconds,
+                            in: 0.5...10.0,
+                            step: 0.5
+                        ) {
+                            HStack {
+                                Text("프롬프트 대기 시간")
+                                Spacer()
+                                Text(String(format: "%.1f초", preferencesStore.prefs.itermAutoTypeDelaySeconds))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Text("ssh 프롬프트가 늦게 뜨거나 호스트 키 확인(yes/no)이 먼저 나오면 값을 늘리세요.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -81,6 +103,55 @@ struct SettingsView: View {
                 }
                 Button("Import…") {
                     runImportPicker()
+                }
+            }
+
+            Section("iCloud 백업") {
+                if !cloudBackup.available {
+                    HStack(spacing: 6) {
+                        Image(systemName: "icloud.slash")
+                            .foregroundStyle(.secondary)
+                        Text("iCloud 를 사용할 수 없습니다. iCloud Drive 로그인 / 앱 iCloud 권한을 확인하세요.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("다시 확인") { cloudBackup.refreshAvailability() }
+                            .buttonStyle(.link)
+                    }
+                } else if !preferencesStore.prefs.icloudBackupEnabled {
+                    Text("백업 비밀번호를 설정하면 iCloud 에 암호화된 백업을 올리고 원탭으로 복원할 수 있습니다.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("iCloud 백업 설정…") { showBackupPasswordSheet = true }
+                } else {
+                    HStack {
+                        Text("마지막 백업")
+                        Spacer()
+                        Text(lastBackupText)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle("변경 시 자동 백업", isOn: $preferencesStore.prefs.icloudAutoBackup)
+                    Button {
+                        cloudBackup.backupNow()
+                    } label: {
+                        HStack {
+                            Text("지금 백업")
+                            if cloudBackup.isBusy {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .disabled(cloudBackup.isBusy)
+                    Button("iCloud 에서 복원…") { showRestoreDialog = true }
+                        .disabled(cloudBackup.isBusy)
+                    Button("백업 해제", role: .destructive) { cloudBackup.disableBackup() }
+                        .disabled(cloudBackup.isBusy)
+                }
+                if let msg = cloudBackup.statusMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -99,6 +170,27 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 460, minHeight: 360)
+        .onAppear { cloudBackup.refreshAvailability() }
+        .sheet(isPresented: $showBackupPasswordSheet) {
+            CloudBackupPasswordSheet { password in
+                cloudBackup.enableBackup(password: password)
+            }
+        }
+        .confirmationDialog(
+            "iCloud 에서 복원",
+            isPresented: $showRestoreDialog,
+            titleVisibility: .visible
+        ) {
+            Button("덮어쓰기 (현재 목록 교체)", role: .destructive) {
+                cloudBackup.restore(mode: .replace)
+            }
+            Button("병합 (기존에 추가)") {
+                cloudBackup.restore(mode: .merge)
+            }
+            Button("취소", role: .cancel) { }
+        } message: {
+            Text("백업 내용을 어떻게 반영할까요?\n· 덮어쓰기: 현재 모든 항목을 폐기하고 백업으로 교체\n· 병합: 기존 항목을 유지하고 백업 항목을 추가")
+        }
         .confirmationDialog(
             "모든 데이터를 삭제합니다.",
             isPresented: $showResetConfirm,
@@ -184,6 +276,15 @@ struct SettingsView: View {
         case .plain: return "평문"
         case .encrypted: return "암호화"
         }
+    }
+
+    /// 마지막 iCloud 백업 시각 표시 문자열
+    private var lastBackupText: String {
+        guard let d = cloudBackup.lastBackupAt else { return "없음" }
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f.string(from: d)
     }
 
     private var totalAttachmentCount: Int {

@@ -135,7 +135,7 @@ Xcode 테스트 타겟은 추가하지 않았다 — 그 이유와 trade-off 는
 ```bash
 cd path/to/9_TerminalLauncher
 swift Tests/run_unit_tests.swift
-# 기대 출력: ✅ passed: 119 / ❌ failed: 0
+# 기대 출력: ✅ passed: 151 / ❌ failed: 0
 ```
 
 검증 대상:
@@ -144,6 +144,8 @@ swift Tests/run_unit_tests.swift
 - `TerminalLauncher.buildShellCommand` — cd만 / cd+1줄 / cd+다중줄 / 빈줄·공백줄 trim / 모두 공백 / 따옴표·공백 경로
 - `TerminalLauncher.escapeForAppleScriptDoubleQuoted` — `\` / `"` / 동시 / shell escape 와의 round-trip
 - `EntryStore.add` / `update` / `delete(id:)` / `delete(ids:)` / `move(from:to:)` / `moveUp` / `moveDown` / `duplicate` — 모든 변경 후 `sortIndex` 가 0..n-1 로 재정렬되는지
+- **(신규)** `duplicate` / `import 재구성` 미러 — SSH/VNC 의 `kind`·원격 필드 보존, 첨부 새 id·토큰·keyAttachmentId remap (복제 버그 회귀 방지)
+- **(신규)** `Preferences` 하위호환 디코드 — 구버전 `preferences.json`(새 키 없음)이 기본값으로 채워지는지
 
 > 주의: standalone 스크립트는 SwiftUI 익스텐션(`Array.move(fromOffsets:toOffset:)`)에 의존할 수 없어
 > 동일 시맨틱을 직접 구현했다. 실제 PathDock 의 `EntryStore.move` 는 SwiftUI 익스텐션을 호출하므로,
@@ -358,3 +360,53 @@ security delete-generic-password -s com.wannypark.pathdock.masterkey -a default 
 |---|---|---|---|
 | 16-18 | preferences.json 부재 | 새 설치 또는 reset 후 첫 실행 | 기본값 `terminalBackend=Terminal`, `itermAutoTypePassword=true` 로 시작 |
 | 16-19 | sessions.json 부재 | 첫 실행 또는 잘못 삭제 | 빈 매핑으로 시작. 첫 더블클릭부터 정상 동작 |
+| 16-20 | 구버전 preferences.json (새 키 없음) | `terminalBackend`/`itermAutoTypePassword` 만 있던 파일로 새 빌드 첫 실행 | 기존 두 값 유지 + `itermAutoTypeDelaySeconds=2.0`, `icloudBackupEnabled=false`, `icloudAutoBackup=true` 로 채워짐 (설정 초기화 안 됨) |
+| 16-21 | iTerm 자동입력 대기시간 | 설정 → iTerm2 → "프롬프트 대기 시간" 조정(0.5~10초) | 다음 SSH 실행 시 그 delay 후 패스워드 자동 입력 |
+
+## 17. 복제 / Import 의 kind·원격 필드 보존 (버그 회귀)
+
+> 과거 SSH/VNC 항목을 복제하거나 import 하면 빈 "명령어" 항목으로 변질됐다. 수정 회귀 검증.
+
+| # | 시나리오 | 조작 | 기대 결과 |
+|---|---|---|---|
+| 17-1 | SSH 복제 | SSH 항목(패스워드 모드, host/port/user 채움) 우클릭 → 복제 | 복사본도 **SSH 타입**이며 host/port/user/password/추가옵션이 그대로. 편집 시트 열어 확인 |
+| 17-2 | VNC 복제 | VNC 항목 복제 | 복사본도 **VNC 타입** + host/password 유지 |
+| 17-3 | 키파일 SSH 복제 | 키파일 모드 SSH 복제 후 복사본 더블클릭 | 복사본이 자체 키파일 첨부(새 id)로 정상 ssh 실행. 원본 키파일 삭제해도 복사본 영향 없음 |
+| 17-4 | 명령어+첨부 복제 | `{{att:...}}` 토큰 포함 명령어 항목 복제 후 복사본 실행 | 복사본이 자체 첨부(새 id)로 정상 실행. 원본/복사본 독립 |
+| 17-5 | SSH Export→Import | SSH 항목 Export → 같은 앱에 Import(병합) | import 된 항목이 **SSH 타입**으로 host/port/user/auth/추가옵션 보존 |
+
+## 18. iCloud 백업 / 복원
+
+> 사전: 시스템 설정에서 iCloud Drive 로그인. Xcode 에서 iCloud capability(Documents) + 컨테이너 `iCloud.com.wannypark.pathdock` 체크 후 빌드.
+
+### 18.1 가용성 / 설정
+
+| # | 시나리오 | 조작 | 기대 결과 |
+|---|---|---|---|
+| 18-1 | iCloud 미로그인 | iCloud 로그아웃 상태로 설정 → iCloud 백업 | "사용 불가" 안내 + 버튼 비활성. "다시 확인" 으로 재평가 |
+| 18-2 | 백업 설정 | "iCloud 백업 설정…" → 백업 비밀번호 입력(일치) → "설정 후 백업" | Keychain 에 백업 비번 저장 + 즉시 1회 백업. "마지막 백업" 시각 표시 |
+| 18-3 | 파일 확인 | Finder → iCloud Drive → PathDock | `PathDock-backup.pathdock` 존재. 텍스트 에디터로 열면 평문이 아님(암호화) |
+
+### 18.2 백업 / 자동 백업
+
+| # | 시나리오 | 조작 | 기대 결과 |
+|---|---|---|---|
+| 18-4 | 수동 백업 | "지금 백업" | 진행 스피너 후 "iCloud 백업 완료" + 시각 갱신 |
+| 18-5 | 자동 백업 | "변경 시 자동 백업" ON 상태에서 항목 추가/수정 | 약 5초 후 자동으로 백업 시각이 갱신됨 (디바운스) |
+| 18-6 | 자동 백업 OFF | 토글 OFF 후 항목 변경 | 자동 백업이 일어나지 않음 (수동 버튼만 동작) |
+
+### 18.3 복원 (다른 기기 / 같은 기기)
+
+| # | 시나리오 | 조작 | 기대 결과 |
+|---|---|---|---|
+| 18-7 | 병합 복원 | "iCloud 에서 복원…" → "병합" | 기존 항목 유지 + 백업 항목 추가(새 id). SSH/VNC kind·원격 필드 보존 |
+| 18-8 | 덮어쓰기 복원 | "iCloud 에서 복원…" → "덮어쓰기" | 현재 목록/첨부 전부 폐기 후 백업으로 교체 |
+| 18-9 | 다른 기기 복원 | 기기 B에서 같은 백업 비번 설정 → 복원 | 기기 A의 항목/첨부가 기기 B에 복원 (첨부는 B의 마스터키로 재암호화) |
+| 18-10 | 잘못된 백업 비번 | (수동으로 Keychain 백업 비번을 틀리게) → 복원 | "복원 실패: …" 메시지 (복호화 실패) |
+
+### 18.4 해제 / 초기화
+
+| # | 시나리오 | 조작 | 기대 결과 |
+|---|---|---|---|
+| 18-11 | 백업 해제 | "백업 해제" | Keychain 백업 비번 삭제 + 토글 off. iCloud 파일은 남음. 설정 화면이 "설정…" 상태로 복귀 |
+| 18-12 | 비밀번호 초기화 시 정리 | 설정 → 비밀번호 초기화 | 마스터키 + **백업 비밀번호** Keychain 항목 모두 삭제됨 |
