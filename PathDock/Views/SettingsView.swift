@@ -187,51 +187,67 @@ struct SettingsView: View {
         }
     }
 
-    /// iCloud 백업 카드 — 가용/미설정/설정완료 3가지 상태
+    /// iCloud 백업 카드 — 가용/미설정/설정완료 3가지 상태. 다른 카드보다 컨텐츠가 많아 minHeight 만 통일.
     private var iCloudCard: some View {
         SettingsCard(title: "iCloud 백업", systemImage: "icloud", tint: .blue) {
             if !cloudBackup.available {
-                HStack(spacing: 6) {
-                    Image(systemName: "icloud.slash").foregroundStyle(.secondary)
-                    Text("iCloud 를 사용할 수 없습니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("다시 확인") { cloudBackup.refreshAvailability() }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                }
+                Label("iCloud 를 사용할 수 없습니다.", systemImage: "icloud.slash")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 Text("iCloud Drive 로그인 / 앱 iCloud 권한을 확인하세요.")
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+                CardActionButton(
+                    title: "다시 확인",
+                    systemImage: "arrow.clockwise",
+                    tint: .blue
+                ) {
+                    cloudBackup.refreshAvailability()
+                }
             } else if !preferencesStore.prefs.icloudBackupEnabled {
                 Text("백업 비밀번호를 설정하면 iCloud 에 암호화된 백업을 올리고 원탭으로 복원할 수 있습니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("iCloud 백업 설정…") { showBackupPasswordSheet = true }
-            } else {
-                HStack {
-                    Text("마지막 백업")
-                    Spacer()
-                    Text(lastBackupText).foregroundStyle(.secondary).font(.caption)
+                Spacer(minLength: 0)
+                CardActionButton(
+                    title: "iCloud 백업 설정…",
+                    systemImage: "icloud.and.arrow.up",
+                    tint: .blue
+                ) {
+                    showBackupPasswordSheet = true
                 }
+            } else {
+                infoRow(label: "마지막 백업", value: lastBackupText)
                 Toggle("변경 시 자동 백업", isOn: $preferencesStore.prefs.icloudAutoBackup)
-                Button {
+                    .toggleStyle(.switch)
+                Spacer(minLength: 0)
+                CardActionButton(
+                    title: cloudBackup.isBusy ? "백업 중…" : "지금 백업",
+                    systemImage: "icloud.and.arrow.up",
+                    tint: .blue
+                ) {
                     cloudBackup.backupNow()
-                } label: {
-                    HStack {
-                        Text("지금 백업")
-                        if cloudBackup.isBusy {
-                            Spacer()
-                            ProgressView().controlSize(.small)
-                        }
-                    }
                 }
                 .disabled(cloudBackup.isBusy)
-                Button("iCloud 에서 복원…") { showRestoreDialog = true }
-                    .disabled(cloudBackup.isBusy)
-                Button("백업 해제", role: .destructive) { cloudBackup.disableBackup() }
-                    .disabled(cloudBackup.isBusy)
+                CardActionButton(
+                    title: "iCloud 에서 복원…",
+                    systemImage: "icloud.and.arrow.down",
+                    tint: .blue
+                ) {
+                    showRestoreDialog = true
+                }
+                .disabled(cloudBackup.isBusy)
+                Button(role: .destructive) {
+                    cloudBackup.disableBackup()
+                } label: {
+                    Label("백업 해제", systemImage: "xmark.circle")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 2)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(cloudBackup.isBusy)
             }
             if let msg = cloudBackup.statusMessage {
                 Text(msg)
@@ -241,26 +257,27 @@ struct SettingsView: View {
         }
     }
 
-    /// Export / Import 카드
+    /// Export / Import 카드 — 큰 시각적 버튼 두 개
     private var dataCard: some View {
         SettingsCard(title: "데이터", systemImage: "square.and.arrow.up.on.square", tint: .green) {
-            HStack(spacing: 8) {
-                Button {
-                    showExportPasswordSheet = true
-                } label: {
-                    Label("Export…", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                Button {
-                    runImportPicker()
-                } label: {
-                    Label("Import…", systemImage: "square.and.arrow.down")
-                        .frame(maxWidth: .infinity)
-                }
-            }
             Text("암호화된 `.pathdock` 단일 파일로 내보내고/가져옵니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            CardActionButton(
+                title: "Export…",
+                systemImage: "square.and.arrow.up",
+                tint: .green
+            ) {
+                showExportPasswordSheet = true
+            }
+            CardActionButton(
+                title: "Import…",
+                systemImage: "square.and.arrow.down",
+                tint: .green
+            ) {
+                runImportPicker()
+            }
         }
     }
 
@@ -270,22 +287,26 @@ struct SettingsView: View {
             infoRow(label: "현재 모드", value: modeText)
             infoRow(label: "등록된 항목", value: "\(store.entries.count)개")
             infoRow(label: "첨부 파일", value: "\(totalAttachmentCount)개")
+            infoRow(label: "터미널 백엔드", value: preferencesStore.prefs.terminalBackend.rawValue)
         }
     }
 
     /// 위험 영역 — 비밀번호 초기화 (실수 방지 위해 별도 카드)
     private var dangerCard: some View {
         SettingsCard(title: "위험 영역", systemImage: "exclamationmark.triangle", tint: .red) {
-            Text("아래 동작은 되돌릴 수 없습니다.")
+            Text("아래 동작은 되돌릴 수 없습니다. 모든 데이터를 삭제하고 첫 실행 화면으로 돌아갑니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button(role: .destructive) {
+            Spacer(minLength: 0)
+            CardActionButton(
+                title: "비밀번호 초기화…",
+                systemImage: "trash",
+                tint: .red,
+                role: .destructive
+            ) {
                 showResetConfirm = true
-            } label: {
-                Label("비밀번호 초기화…", systemImage: "trash")
-                    .frame(maxWidth: .infinity)
             }
-            .help("모든 데이터를 삭제하고 첫 실행 화면으로 돌아갑니다.")
+            .help("entries, 첨부, Keychain 마스터키가 모두 삭제됩니다.")
         }
     }
 
@@ -396,41 +417,49 @@ extension Notification.Name {
 }
 
 /// 설정 화면의 단일 카드. 헤더(SF Symbol + 제목) + 자유 컨텐츠.
-/// 폭에 맞춰 그리드가 1~3 컬럼으로 적응하며, 카드 자체는 폭을 채우고 높이는 컨텐츠에 맞춘다.
+/// 폭에 맞춰 그리드가 1~3 컬럼으로 적응하며, 최소 높이를 통일해 카드들이
+/// 시각적으로 정렬되도록 한다. 컨텐츠가 짧으면 카드 자체가 늘어나고 컨텐츠는 위로 붙는다.
 struct SettingsCard<Content: View>: View {
     let title: String
     let systemImage: String
     let tint: Color
+    /// 카드 최소 높이 — 그리드 안에서 카드들이 비슷한 높이로 정렬되도록 강제
+    let minHeight: CGFloat
     @ViewBuilder let content: () -> Content
 
     init(
         title: String,
         systemImage: String,
         tint: Color = .accentColor,
+        minHeight: CGFloat = 210,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.systemImage = systemImage
         self.tint = tint
+        self.minHeight = minHeight
         self.content = content
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
-                    .font(.callout.weight(.semibold))
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 22, height: 22, alignment: .center)
                 Text(title)
                     .font(.headline)
                 Spacer()
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 content()
             }
+            // 컨텐츠가 짧으면 카드 하단까지 늘려 풋터가 일정한 시각 흐름을 가지게 함
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
@@ -439,5 +468,43 @@ struct SettingsCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
         )
+    }
+}
+
+/// 카드 안에서 사용할 시각적 액션 버튼 — 큰 SF Symbol + 라벨, 카드 폭을 가득 채움.
+/// borderedProminent 로 강조하고 tint 색을 받아 카드 헤더 색과 일관성 유지.
+struct CardActionButton: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let role: ButtonRole?
+    let action: () -> Void
+
+    init(
+        title: String,
+        systemImage: String,
+        tint: Color = .accentColor,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.tint = tint
+        self.role = role
+        self.action = action
+    }
+
+    var body: some View {
+        Button(role: role, action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                Text(title)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(tint)
+        .controlSize(.large)
     }
 }
