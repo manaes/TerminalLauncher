@@ -90,11 +90,15 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" \
             "$APP_PATH/Contents/Info.plist"
 
-      - name: Strip code signature (ensure unsigned)
-        # CODE_SIGNING_ALLOWED=NO 라도 일부 단계에서 ad-hoc 서명이 붙을 수 있어 명시적으로 제거
+      - name: Ad-hoc re-sign (Apple Silicon 실행 요건)
+        # macOS 11+ Apple Silicon 은 모든 실행 파일에 최소한 ad-hoc 서명을 요구한다.
+        # 서명을 제거하면 "응용 프로그램을 열 수 없습니다" 로 실행이 거부되므로
+        # Developer ID 가 없어도 자기 자신을 ad-hoc 서명자로 다시 붙인다.
+        # (= 정식 공증/배포 서명은 아니지만 Gatekeeper 우회 후 실행은 가능)
         run: |
-          codesign --remove-signature "${{ steps.app.outputs.path }}" || true
-          codesign --verify --verbose "${{ steps.app.outputs.path }}" 2>&1 || echo "(unsigned — expected)"
+          codesign --force --deep --sign - "${{ steps.app.outputs.path }}"
+          codesign --verify --verbose=2 "${{ steps.app.outputs.path }}" 2>&1 || true
+          codesign -dv --verbose=2 "${{ steps.app.outputs.path }}" 2>&1 | head -20 || true
 
       - name: Package .app → .zip
         id: zip
