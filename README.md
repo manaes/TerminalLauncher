@@ -20,8 +20,19 @@
 [**📦 GitHub Releases**](https://github.com/manaes/TerminalLauncher/releases/latest) 페이지에서 최신 `PathDock-x.y.z.zip` 을 받는다. (`v*` 태그 푸시 시 GitHub Actions 가 미서명 빌드를 자동으로 첨부)
 
 1. 다운로드한 zip 을 풀어 `PathDock.app` 을 `/Applications` 폴더로 드래그
-2. 처음 실행할 때 macOS Gatekeeper 가 차단하면 → **시스템 설정 → 개인 정보 보호 및 보안** 하단의 **"그래도 열기"** 를 한 번 누른다 (미서명 빌드 한정)
+2. 처음 실행할 때 macOS Gatekeeper 가 차단하면 → **시스템 설정 → 개인 정보 보호 및 보안** 하단의 **"그래도 열기"** 를 한 번 누른다 (Developer ID 정식 서명·공증을 적용하기 전까지 미서명 한정)
 3. 첫 실행 다이얼로그에서 **암호화 활성화 / 암호화하지 않기** + **터미널 백엔드(Terminal/iTerm2)** 선택
+
+### 문제 해결 — "응용 프로그램을 열 수 없습니다"
+
+Apple Silicon macOS 는 모든 실행 파일에 최소한 **ad-hoc 서명**을 요구한다. v1.0.0 이전 빌드처럼 서명이 완전히 비어있는 경우 "PathDock.app 응용 프로그램을 열 수 없습니다" 로 차단될 수 있다. 다음으로 응급 처치:
+
+```bash
+sudo codesign --force --deep --sign - /Applications/PathDock.app
+xattr -dr com.apple.quarantine /Applications/PathDock.app
+```
+
+> v1.0.1 이상 빌드는 CI 가 ad-hoc 재서명을 자동으로 붙이므로 위 명령은 불필요하다.
 
 소스에서 직접 빌드하려면 아래 [빌드 및 실행](#빌드-및-실행) 참고. CI 상태:
 
@@ -226,6 +237,8 @@ PathDock 은 두 가지 터미널 백엔드를 지원한다.
 
 | 일자 | 요약 |
 |---|---|
+| 2026-06-something | GitHub Actions 자동 배포 (CI + `v*` 태그 푸시 → 미서명 `.app.zip` 자동 릴리즈) · Apple Silicon 실행 위해 ad-hoc 재서명(`codesign --force --deep --sign -`) 적용 |
+| 2026-06-something | 설정 화면을 카드 그리드로 재구성 · 폭에 따라 1~3 컬럼 자동 적응 · 같은 행 카드 높이 자동 통일 · 위험 영역 카드 분리 |
 | 2026-05-30 | **iCloud 백업/복원** 추가 (전용 컨테이너, 원탭 + 자동) · 복제·Import 시 SSH/VNC 정보 누락 버그 수정 · PBKDF2 백그라운드 오프로딩 · iTerm2 자동 입력 대기 시간 설정화 → 자세히: [핸드오프 문서](docs/2026-05-30-icloud-backup-and-fixes.md) |
 | 2026-05-27 | SwiftUI 뷰 평가 도중 `NSAppleScript` 동기 실행으로 인한 재진입 SIGABRT 크래시 수정 |
 | 2026-05-26 | iTerm2 세션 검사 일괄 조회 · SSH 패스워드 전달 백엔드별 캡슐화 |

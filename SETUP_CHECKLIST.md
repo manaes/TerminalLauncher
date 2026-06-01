@@ -62,3 +62,44 @@ PathDock 개발 중 뒤늦게 발견했던 함정들을 정리한 체크리스�
 - [ ] `.gitignore` 에 에이전트 도구 부산물(`.claude/`, `.claude-flow/`, `ruvector.db` 등),
   빌드 산출물, `xcuserdata/` 가 포함됐는지.
 - [ ] 소스/문서에 실제 경로(`/Users/<name>/…`), 사내 프로젝트명이 남아있지 않은지.
+
+## GitHub Actions 자동 배포
+
+워크플로 두 개가 `.github/workflows/` 에 있다.
+
+| 파일 | 트리거 | 동작 |
+|---|---|---|
+| `ci.yml` | master push / PR / 수동 | `xcodebuild Debug build` + `swift Tests/run_unit_tests.swift` (빌드+회귀만, 산출물 없음) |
+| `release.yml` | `v*` 태그 push / 수동 | Release 빌드 → **ad-hoc 재서명** → `ditto` 압축 → GitHub Releases 에 `PathDock-x.y.z.zip` 첨부 |
+
+### 새 릴리즈 만들기
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+# → Actions 가 자동으로 빌드/패키징/Release 생성
+```
+
+수동: GitHub Actions → Release → Run workflow → tag 입력.
+
+### 서명 정책 (현재: 미서명 + ad-hoc 재서명)
+
+- [ ] `release.yml` 의 "Ad-hoc re-sign" 단계가 `codesign --force --deep --sign -` 인지 확인
+  (`--remove-signature` 로 두면 Apple Silicon amfi 가 실행을 차단)
+- [ ] Actions 로그에서 `codesign --verify` 가 `valid on disk` + `satisfies its Designated Requirement` 출력하는지
+- [ ] 배포 후 사용자 머신(특히 Apple Silicon)에서 다운로드 → /Applications 이동 → 더블클릭 → "그래도 열기" 한 번으로 정상 실행되는지 검증
+
+### 권한
+
+- [ ] 레포 Settings → Actions → General → **Workflow permissions = "Read and write permissions"**
+  (`gh release create` 가 contents:write 권한 필요)
+
+### 정식 서명·공증으로 업그레이드할 때 (선택)
+
+Apple Developer Program 가입자가 Gatekeeper 통과까지 자동화하려면 후속 작업:
+
+- Developer ID Application 인증서(.p12) + 비밀번호를 GitHub Secrets 에 등록
+- Notarytool API Key (Issuer ID / Key ID / .p8) Secrets 등록
+- `release.yml` 의 "Ad-hoc re-sign" 단계를 Developer ID 서명으로 교체 →
+  `xcrun notarytool submit --wait` → `xcrun stapler staple`
+- 그 시점에 README 의 "그래도 열기" 안내는 삭제 가능
