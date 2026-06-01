@@ -2,7 +2,7 @@
 
 자주 사용하는 작업 디렉토리·SSH·VNC 연결을 등록해두고 **더블클릭** 한 번으로 새 터미널 창을 띄우는 macOS 런처.
 
-![PathDock 메인 화면](docs/screenshots/01-main-list.png)
+![PathDock 메인 화면](docs/screenshots/01.png)
 
 > macOS 13+ · Swift / SwiftUI · 개인/사내용 (App Sandbox OFF, Mac App Store 미배포)
 
@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| ![추가 시트](docs/screenshots/02-add-entry.png) | ![설정 화면](docs/screenshots/03-settings.png) |
+| ![추가 시트](docs/screenshots/02.png) | ![설정 화면](docs/screenshots/03.png) |
 | **타입별 입력 폼** — 명령어 / SSH / VNC | **설정** — 터미널 백엔드 / 암호화 / iCloud 백업 |
 
 > 위 스크린샷 파일은 `docs/screenshots/` 디렉토리에 있는 파일을 참조한다. 빈 상태로 보이면 같은 이름으로 캡처해 넣어두면 자동으로 노출된다.
