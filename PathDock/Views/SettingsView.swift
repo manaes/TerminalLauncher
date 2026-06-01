@@ -32,147 +32,27 @@ struct SettingsView: View {
     @State private var showRestoreDialog = false
 
     var body: some View {
-        Form {
-            Section("보안") {
-                HStack {
-                    Text("현재 모드")
-                    Spacer()
-                    Text(modeText)
-                        .foregroundStyle(.secondary)
+        ScrollView {
+            // 카드 그리드 — 폭에 따라 1~3 컬럼으로 자동 적응 (카드 최소 폭 280).
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 280), spacing: 14)],
+                alignment: .leading,
+                spacing: 14
+            ) {
+                terminalCard
+                if preferencesStore.prefs.terminalBackend == .iterm2 {
+                    itermCard
                 }
-                Button(role: .destructive) {
-                    showResetConfirm = true
-                } label: {
-                    Text("비밀번호 초기화…")
-                }
-                .help("모든 데이터를 삭제하고 첫 실행 화면으로 돌아갑니다.")
+                iCloudCard
+                dataCard
+                infoCard
+                dangerCard
             }
-
-            Section("터미널") {
-                // 사용자 백엔드 선택. iTerm2 변경 시 설치 검증 + 매핑 폐기.
-                Picker("백엔드", selection: backendBinding) {
-                    ForEach(TerminalBackend.allCases) { b in
-                        Text(b.rawValue).tag(b)
-                    }
-                }
-                .pickerStyle(.segmented)
-                if preferencesStore.prefs.terminalBackend == .iterm2 && !LauncherUtil.isITermInstalled() {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(.red)
-                        Text("iTerm2 가 설치되어 있지 않습니다.")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("설치하기") {
-                            if let url = URL(string: "https://iterm2.com/") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        }
-                        .buttonStyle(.link)
-                    }
-                }
-            }
-
-            // iTerm2 백엔드 전용 옵션 섹션
-            if preferencesStore.prefs.terminalBackend == .iterm2 {
-                Section("iTerm2") {
-                    Toggle("SSH 패스워드 자동 입력", isOn: $preferencesStore.prefs.itermAutoTypePassword)
-                    if preferencesStore.prefs.itermAutoTypePassword {
-                        Stepper(
-                            value: $preferencesStore.prefs.itermAutoTypeDelaySeconds,
-                            in: 0.5...10.0,
-                            step: 0.5
-                        ) {
-                            HStack {
-                                Text("프롬프트 대기 시간")
-                                Spacer()
-                                Text(String(format: "%.1f초", preferencesStore.prefs.itermAutoTypeDelaySeconds))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Text("ssh 프롬프트가 늦게 뜨거나 호스트 키 확인(yes/no)이 먼저 나오면 값을 늘리세요.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Section("데이터") {
-                Button("Export…") {
-                    showExportPasswordSheet = true
-                }
-                Button("Import…") {
-                    runImportPicker()
-                }
-            }
-
-            Section("iCloud 백업") {
-                if !cloudBackup.available {
-                    HStack(spacing: 6) {
-                        Image(systemName: "icloud.slash")
-                            .foregroundStyle(.secondary)
-                        Text("iCloud 를 사용할 수 없습니다. iCloud Drive 로그인 / 앱 iCloud 권한을 확인하세요.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("다시 확인") { cloudBackup.refreshAvailability() }
-                            .buttonStyle(.link)
-                    }
-                } else if !preferencesStore.prefs.icloudBackupEnabled {
-                    Text("백업 비밀번호를 설정하면 iCloud 에 암호화된 백업을 올리고 원탭으로 복원할 수 있습니다.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Button("iCloud 백업 설정…") { showBackupPasswordSheet = true }
-                } else {
-                    HStack {
-                        Text("마지막 백업")
-                        Spacer()
-                        Text(lastBackupText)
-                            .foregroundStyle(.secondary)
-                    }
-                    Toggle("변경 시 자동 백업", isOn: $preferencesStore.prefs.icloudAutoBackup)
-                    Button {
-                        cloudBackup.backupNow()
-                    } label: {
-                        HStack {
-                            Text("지금 백업")
-                            if cloudBackup.isBusy {
-                                Spacer()
-                                ProgressView().controlSize(.small)
-                            }
-                        }
-                    }
-                    .disabled(cloudBackup.isBusy)
-                    Button("iCloud 에서 복원…") { showRestoreDialog = true }
-                        .disabled(cloudBackup.isBusy)
-                    Button("백업 해제", role: .destructive) { cloudBackup.disableBackup() }
-                        .disabled(cloudBackup.isBusy)
-                }
-                if let msg = cloudBackup.statusMessage {
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("정보") {
-                HStack {
-                    Text("등록된 항목")
-                    Spacer()
-                    Text("\(store.entries.count)개").foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("첨부 파일")
-                    Spacer()
-                    Text("\(totalAttachmentCount)개").foregroundStyle(.secondary)
-                }
-            }
+            .padding(14)
         }
-        .formStyle(.grouped)
-        // 사용자가 자유롭게 리사이즈할 수 있도록 maxWidth/maxHeight 를 .infinity 로 푼다.
-        // (min 만 지정하면 Settings Scene 이 컨텐츠 intrinsic size 에 묶여 고정처럼 보임)
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(
-            minWidth: 460, idealWidth: 540, maxWidth: .infinity,
+            minWidth: 460, idealWidth: 720, maxWidth: .infinity,
             minHeight: 360, idealHeight: 560, maxHeight: .infinity
         )
         .onAppear { cloudBackup.refreshAvailability() }
@@ -249,6 +129,174 @@ struct SettingsView: View {
         } message: {
             Text("iterm2.com 에서 설치하거나 Terminal 을 선택하세요.")
         }
+    }
+
+    // MARK: - 카드들
+
+    /// 터미널 백엔드 선택 카드
+    private var terminalCard: some View {
+        SettingsCard(title: "터미널", systemImage: "terminal", tint: .accentColor) {
+            Picker("백엔드", selection: backendBinding) {
+                ForEach(TerminalBackend.allCases) { b in
+                    Text(b.rawValue).tag(b)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if preferencesStore.prefs.terminalBackend == .iterm2 && !LauncherUtil.isITermInstalled() {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                    Text("iTerm2 가 설치되어 있지 않습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("설치하기") {
+                        if let url = URL(string: "https://iterm2.com/") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+            }
+        }
+    }
+
+    /// iTerm2 자동 입력 옵션 카드 (백엔드가 iTerm2 일 때만)
+    private var itermCard: some View {
+        SettingsCard(title: "iTerm2", systemImage: "macwindow", tint: .indigo) {
+            Toggle("SSH 패스워드 자동 입력", isOn: $preferencesStore.prefs.itermAutoTypePassword)
+            if preferencesStore.prefs.itermAutoTypePassword {
+                Stepper(
+                    value: $preferencesStore.prefs.itermAutoTypeDelaySeconds,
+                    in: 0.5...10.0,
+                    step: 0.5
+                ) {
+                    HStack {
+                        Text("프롬프트 대기")
+                        Spacer()
+                        Text(String(format: "%.1f초", preferencesStore.prefs.itermAutoTypeDelaySeconds))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                Text("ssh 프롬프트가 늦게 뜨거나 호스트 키 확인(yes/no)이 먼저 나오면 값을 늘리세요.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// iCloud 백업 카드 — 가용/미설정/설정완료 3가지 상태
+    private var iCloudCard: some View {
+        SettingsCard(title: "iCloud 백업", systemImage: "icloud", tint: .blue) {
+            if !cloudBackup.available {
+                HStack(spacing: 6) {
+                    Image(systemName: "icloud.slash").foregroundStyle(.secondary)
+                    Text("iCloud 를 사용할 수 없습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("다시 확인") { cloudBackup.refreshAvailability() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+                Text("iCloud Drive 로그인 / 앱 iCloud 권한을 확인하세요.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else if !preferencesStore.prefs.icloudBackupEnabled {
+                Text("백업 비밀번호를 설정하면 iCloud 에 암호화된 백업을 올리고 원탭으로 복원할 수 있습니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("iCloud 백업 설정…") { showBackupPasswordSheet = true }
+            } else {
+                HStack {
+                    Text("마지막 백업")
+                    Spacer()
+                    Text(lastBackupText).foregroundStyle(.secondary).font(.caption)
+                }
+                Toggle("변경 시 자동 백업", isOn: $preferencesStore.prefs.icloudAutoBackup)
+                Button {
+                    cloudBackup.backupNow()
+                } label: {
+                    HStack {
+                        Text("지금 백업")
+                        if cloudBackup.isBusy {
+                            Spacer()
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                }
+                .disabled(cloudBackup.isBusy)
+                Button("iCloud 에서 복원…") { showRestoreDialog = true }
+                    .disabled(cloudBackup.isBusy)
+                Button("백업 해제", role: .destructive) { cloudBackup.disableBackup() }
+                    .disabled(cloudBackup.isBusy)
+            }
+            if let msg = cloudBackup.statusMessage {
+                Text(msg)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Export / Import 카드
+    private var dataCard: some View {
+        SettingsCard(title: "데이터", systemImage: "square.and.arrow.up.on.square", tint: .green) {
+            HStack(spacing: 8) {
+                Button {
+                    showExportPasswordSheet = true
+                } label: {
+                    Label("Export…", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                Button {
+                    runImportPicker()
+                } label: {
+                    Label("Import…", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            Text("암호화된 `.pathdock` 단일 파일로 내보내고/가져옵니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 정보 카드 — 통계만
+    private var infoCard: some View {
+        SettingsCard(title: "정보", systemImage: "info.circle", tint: .gray) {
+            infoRow(label: "현재 모드", value: modeText)
+            infoRow(label: "등록된 항목", value: "\(store.entries.count)개")
+            infoRow(label: "첨부 파일", value: "\(totalAttachmentCount)개")
+        }
+    }
+
+    /// 위험 영역 — 비밀번호 초기화 (실수 방지 위해 별도 카드)
+    private var dangerCard: some View {
+        SettingsCard(title: "위험 영역", systemImage: "exclamationmark.triangle", tint: .red) {
+            Text("아래 동작은 되돌릴 수 없습니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button(role: .destructive) {
+                showResetConfirm = true
+            } label: {
+                Label("비밀번호 초기화…", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .help("모든 데이터를 삭제하고 첫 실행 화면으로 돌아갑니다.")
+        }
+    }
+
+    /// 정보 카드 내부 행
+    private func infoRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).monospacedDigit()
+        }
+        .font(.callout)
     }
 
     /// 백엔드 Picker 의 커스텀 binding.
@@ -345,4 +393,51 @@ struct SettingsView: View {
 extension Notification.Name {
     /// 비밀번호 초기화 완료 시 PathDockApp 에 phase 를 firstRun 으로 되돌리라고 알림
     static let pathDockSecurityReset = Notification.Name("PathDockSecurityReset")
+}
+
+/// 설정 화면의 단일 카드. 헤더(SF Symbol + 제목) + 자유 컨텐츠.
+/// 폭에 맞춰 그리드가 1~3 컬럼으로 적응하며, 카드 자체는 폭을 채우고 높이는 컨텐츠에 맞춘다.
+struct SettingsCard<Content: View>: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    @ViewBuilder let content: () -> Content
+
+    init(
+        title: String,
+        systemImage: String,
+        tint: Color = .accentColor,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.tint = tint
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(tint)
+                    .font(.callout.weight(.semibold))
+                Text(title)
+                    .font(.headline)
+                Spacer()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                content()
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+    }
 }
