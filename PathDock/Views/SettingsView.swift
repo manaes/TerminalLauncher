@@ -187,7 +187,7 @@ struct SettingsView: View {
         }
     }
 
-    /// iCloud 백업 카드 — 가용/미설정/설정완료 3가지 상태. 다른 카드보다 컨텐츠가 많아 minHeight 만 통일.
+    /// iCloud 백업 카드 — 가용/미설정/설정완료 3가지 상태. 자연 높이로 컴팩트하게.
     private var iCloudCard: some View {
         SettingsCard(title: "iCloud 백업", systemImage: "icloud", tint: .blue) {
             if !cloudBackup.available {
@@ -197,7 +197,6 @@ struct SettingsView: View {
                 Text("iCloud Drive 로그인 / 앱 iCloud 권한을 확인하세요.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
                 CardActionButton(
                     title: "다시 확인",
                     systemImage: "arrow.clockwise",
@@ -209,7 +208,6 @@ struct SettingsView: View {
                 Text("백업 비밀번호를 설정하면 iCloud 에 암호화된 백업을 올리고 원탭으로 복원할 수 있습니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
                 CardActionButton(
                     title: "iCloud 백업 설정…",
                     systemImage: "icloud.and.arrow.up",
@@ -221,32 +219,32 @@ struct SettingsView: View {
                 infoRow(label: "마지막 백업", value: lastBackupText)
                 Toggle("변경 시 자동 백업", isOn: $preferencesStore.prefs.icloudAutoBackup)
                     .toggleStyle(.switch)
-                Spacer(minLength: 0)
-                CardActionButton(
-                    title: cloudBackup.isBusy ? "백업 중…" : "지금 백업",
-                    systemImage: "icloud.and.arrow.up",
-                    tint: .blue
-                ) {
-                    cloudBackup.backupNow()
+                HStack(spacing: 8) {
+                    CardActionButton(
+                        title: cloudBackup.isBusy ? "백업 중…" : "지금 백업",
+                        systemImage: "icloud.and.arrow.up",
+                        tint: .blue
+                    ) {
+                        cloudBackup.backupNow()
+                    }
+                    .disabled(cloudBackup.isBusy)
+                    CardActionButton(
+                        title: "복원…",
+                        systemImage: "icloud.and.arrow.down",
+                        tint: .blue
+                    ) {
+                        showRestoreDialog = true
+                    }
+                    .disabled(cloudBackup.isBusy)
                 }
-                .disabled(cloudBackup.isBusy)
                 CardActionButton(
-                    title: "iCloud 에서 복원…",
-                    systemImage: "icloud.and.arrow.down",
-                    tint: .blue
+                    title: "백업 해제",
+                    systemImage: "xmark.circle",
+                    tint: .gray,
+                    role: .destructive
                 ) {
-                    showRestoreDialog = true
-                }
-                .disabled(cloudBackup.isBusy)
-                Button(role: .destructive) {
                     cloudBackup.disableBackup()
-                } label: {
-                    Label("백업 해제", systemImage: "xmark.circle")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 2)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
                 .disabled(cloudBackup.isBusy)
             }
             if let msg = cloudBackup.statusMessage {
@@ -257,26 +255,27 @@ struct SettingsView: View {
         }
     }
 
-    /// Export / Import 카드 — 큰 시각적 버튼 두 개
+    /// Export / Import 카드 — 가로 2버튼으로 컴팩트
     private var dataCard: some View {
         SettingsCard(title: "데이터", systemImage: "square.and.arrow.up.on.square", tint: .green) {
             Text("암호화된 `.pathdock` 단일 파일로 내보내고/가져옵니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            CardActionButton(
-                title: "Export…",
-                systemImage: "square.and.arrow.up",
-                tint: .green
-            ) {
-                showExportPasswordSheet = true
-            }
-            CardActionButton(
-                title: "Import…",
-                systemImage: "square.and.arrow.down",
-                tint: .green
-            ) {
-                runImportPicker()
+            HStack(spacing: 8) {
+                CardActionButton(
+                    title: "Export…",
+                    systemImage: "square.and.arrow.up",
+                    tint: .green
+                ) {
+                    showExportPasswordSheet = true
+                }
+                CardActionButton(
+                    title: "Import…",
+                    systemImage: "square.and.arrow.down",
+                    tint: .green
+                ) {
+                    runImportPicker()
+                }
             }
         }
     }
@@ -297,7 +296,6 @@ struct SettingsView: View {
             Text("아래 동작은 되돌릴 수 없습니다. 모든 데이터를 삭제하고 첫 실행 화면으로 돌아갑니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
             CardActionButton(
                 title: "비밀번호 초기화…",
                 systemImage: "trash",
@@ -417,49 +415,43 @@ extension Notification.Name {
 }
 
 /// 설정 화면의 단일 카드. 헤더(SF Symbol + 제목) + 자유 컨텐츠.
-/// 폭에 맞춰 그리드가 1~3 컬럼으로 적응하며, 최소 높이를 통일해 카드들이
-/// 시각적으로 정렬되도록 한다. 컨텐츠가 짧으면 카드 자체가 늘어나고 컨텐츠는 위로 붙는다.
+/// 카드 높이는 컨텐츠에 맞춘 자연 높이 — 강제 minHeight 없이 컴팩트하게 둔다.
+/// 시각 일관성은 컨텐츠 안의 패딩·spacing·버튼 스타일을 통일해 확보한다.
 struct SettingsCard<Content: View>: View {
     let title: String
     let systemImage: String
     let tint: Color
-    /// 카드 최소 높이 — 그리드 안에서 카드들이 비슷한 높이로 정렬되도록 강제
-    let minHeight: CGFloat
     @ViewBuilder let content: () -> Content
 
     init(
         title: String,
         systemImage: String,
         tint: Color = .accentColor,
-        minHeight: CGFloat = 210,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.systemImage = systemImage
         self.tint = tint
-        self.minHeight = minHeight
         self.content = content
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
-                    .font(.title3.weight(.semibold))
-                    .frame(width: 22, height: 22, alignment: .center)
+                    .font(.callout.weight(.semibold))
+                    .frame(width: 16, height: 16, alignment: .center)
                 Text(title)
                     .font(.headline)
                 Spacer()
             }
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 content()
             }
-            // 컨텐츠가 짧으면 카드 하단까지 늘려 풋터가 일정한 시각 흐름을 가지게 함
-            Spacer(minLength: 0)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
@@ -471,8 +463,8 @@ struct SettingsCard<Content: View>: View {
     }
 }
 
-/// 카드 안에서 사용할 시각적 액션 버튼 — 큰 SF Symbol + 라벨, 카드 폭을 가득 채움.
-/// borderedProminent 로 강조하고 tint 색을 받아 카드 헤더 색과 일관성 유지.
+/// 카드 안에서 사용할 액션 버튼 — bordered + 작은 SF Symbol + 라벨, 카드 폭을 가득 채움.
+/// 모든 카드의 액션이 시각적으로 동일한 모양/크기를 갖도록 한다.
 struct CardActionButton: View {
     let title: String
     let systemImage: String
@@ -496,15 +488,11 @@ struct CardActionButton: View {
 
     var body: some View {
         Button(role: role, action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                Text(title)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.bordered)
         .tint(tint)
-        .controlSize(.large)
+        .controlSize(.regular)
     }
 }
