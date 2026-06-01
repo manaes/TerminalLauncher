@@ -58,6 +58,9 @@ struct PathDockApp: App {
             CommandGroup(replacing: .newItem) { }
         }
         // ⌘, 단축키로 자동 연결되는 Settings Scene
+        // 기본적으로 macOS 의 Settings Scene 윈도우는 styleMask 에서 .resizable 이 빠져
+        // 고정 크기로 동작한다. windowResizability(.contentMinSize) 로 풀어
+        // 사용자가 자유롭게 크기를 조절할 수 있게 한다 (최소 크기는 컨텐츠 minSize).
         Settings {
             if let store = store, let sessionStore = sessionStore, let preferencesStore = preferencesStore, let cloudBackupStore = cloudBackupStore {
                 SettingsView()
@@ -73,6 +76,7 @@ struct PathDockApp: App {
                     .frame(width: 320, height: 120)
             }
         }
+        .windowResizability(.contentMinSize)
     }
 
     // MARK: - Phase 라우팅
