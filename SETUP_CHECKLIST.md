@@ -34,6 +34,19 @@ PathDock 개발 중 뒤늦게 발견했던 함정들을 정리한 체크리스�
 - [ ] AppleScript 로 외부 앱을 제어하면 `NSAppleEventsUsageDescription` (사용 설명) 필수.
 - [ ] `LSMinimumSystemVersion` 이 실제 최소 타겟과 일치하는지.
 
+## iCloud (백업/복원 기능 사용 시)
+
+- [ ] **Signing & Capabilities → + Capability → iCloud → iCloud Documents** 체크
+- [ ] 컨테이너 `iCloud.com.wannypark.pathdock` 가 목록에 있고 선택돼 있음 (자동 서명이면 Xcode 가 보통 자동 등록)
+- [ ] `PathDock.entitlements` 에 다음 키가 있는지 (`f81d1d4` 에서 추가):
+  - `com.apple.developer.icloud-container-identifiers`
+  - `com.apple.developer.icloud-services = CloudDocuments`
+  - `com.apple.developer.ubiquity-container-identifiers`
+- [ ] `Info.plist` 의 `NSUbiquitousContainers` 가 선언돼 있는지 (Finder iCloud Drive 에 "PathDock" 폴더 노출용)
+- [ ] **정식 서명 빌드(⌘R 또는 Archive)** 로만 iCloud 가 활성 — `CODE_SIGNING_ALLOWED=NO` 빌드는 엔타이틀먼트가 빠져 런타임 비활성
+
+> iCloud 동작 검증: 앱 첫 백업 실행 후 **Finder → iCloud Drive 에 "PathDock" 폴더**, **시스템 설정 → Apple 계정 → iCloud → iCloud Drive 사용 앱** 에 항목이 등록되면 정상.
+
 ## 빌드 검증
 
 - [ ] `xcodebuild -project … -scheme … -configuration Debug build` 가 `** BUILD SUCCEEDED **`
