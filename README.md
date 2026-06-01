@@ -17,13 +17,16 @@
 
 ## 다운로드 / 설치
 
-배포본(`.dmg` 또는 `.app.zip`) 을 받았다면 다음 순서로 설치한다.
+[**📦 GitHub Releases**](https://github.com/manaes/TerminalLauncher/releases/latest) 페이지에서 최신 `PathDock-x.y.z.zip` 을 받는다. (`v*` 태그 푸시 시 GitHub Actions 가 미서명 빌드를 자동으로 첨부)
 
-1. 다운로드한 `PathDock.app` 을 `Applications` 폴더로 드래그
-2. 처음 실행할 때 macOS Gatekeeper 가 차단하면 → `시스템 설정 → 개인 정보 보호 및 보안` 하단의 **"열기"** 버튼을 한 번 누른다
+1. 다운로드한 zip 을 풀어 `PathDock.app` 을 `/Applications` 폴더로 드래그
+2. 처음 실행할 때 macOS Gatekeeper 가 차단하면 → **시스템 설정 → 개인 정보 보호 및 보안** 하단의 **"그래도 열기"** 를 한 번 누른다 (미서명 빌드 한정)
 3. 첫 실행 다이얼로그에서 **암호화 활성화 / 암호화하지 않기** + **터미널 백엔드(Terminal/iTerm2)** 선택
 
-소스에서 직접 빌드하려면 아래 [빌드 및 실행](#빌드-및-실행) 참고.
+소스에서 직접 빌드하려면 아래 [빌드 및 실행](#빌드-및-실행) 참고. CI 상태:
+
+[![CI](https://github.com/manaes/TerminalLauncher/actions/workflows/ci.yml/badge.svg)](https://github.com/manaes/TerminalLauncher/actions/workflows/ci.yml)
+[![Release](https://github.com/manaes/TerminalLauncher/actions/workflows/release.yml/badge.svg)](https://github.com/manaes/TerminalLauncher/actions/workflows/release.yml)
 
 ## 주요 기능
 

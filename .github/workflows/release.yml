@@ -1,0 +1,131 @@
+name: Release
+
+# v* 태그 푸시 시 미서명 .app.zip 을 만들어 GitHub Releases 에 첨부한다.
+#
+# 사용법:
+#   git tag v1.0.1
+#   git push origin v1.0.1
+#
+# 산출물은 Gatekeeper 우회가 필요한 미서명 빌드다.
+# 사용자는 첫 실행 시 "시스템 설정 → 개인 정보 보호 및 보안 → 그래도 열기" 한 번만 누르면 된다.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '릴리즈 태그(예: v1.0.1) — workflow_dispatch 로 수동 실행 시 사용'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # gh release create 에 필요
+
+jobs:
+  release:
+    name: Build & publish unsigned .app.zip
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 이전 태그 기반 changelog 생성용
+
+      - name: Resolve version
+        id: ver
+        run: |
+          # tag push 면 GITHUB_REF_NAME, 수동 실행이면 input.tag 사용
+          RAW="${{ inputs.tag != '' && inputs.tag || github.ref_name }}"
+          VERSION="${RAW#v}"
+          if [ -z "$VERSION" ]; then
+            echo "version 을 결정할 수 없습니다 (ref=$GITHUB_REF_NAME)"
+            exit 1
+          fi
+          echo "raw=$RAW" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Resolved: MARKETING_VERSION=$VERSION, CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER"
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Standalone unit regression
+        run: swift Tests/run_unit_tests.swift
+
+      - name: Build (Release, unsigned)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          BUILD: ${{ steps.ver.outputs.build }}
+        run: |
+          xcodebuild \
+            -project TerminalLauncher.xcodeproj \
+            -scheme PathDock \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath ./.build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            build
+
+      - name: Locate built .app
+        id: app
+        run: |
+          APP_PATH="./.build/Build/Products/Release/PathDock.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::PathDock.app not found at $APP_PATH"
+            ls -la ./.build/Build/Products/Release/ || true
+            exit 1
+          fi
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+          # 빌드 산출물의 버전 확인 (sanity check)
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" \
+            "$APP_PATH/Contents/Info.plist"
+
+      - name: Strip code signature (ensure unsigned)
+        # CODE_SIGNING_ALLOWED=NO 라도 일부 단계에서 ad-hoc 서명이 붙을 수 있어 명시적으로 제거
+        run: |
+          codesign --remove-signature "${{ steps.app.outputs.path }}" || true
+          codesign --verify --verbose "${{ steps.app.outputs.path }}" 2>&1 || echo "(unsigned — expected)"
+
+      - name: Package .app → .zip
+        id: zip
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          ZIP="PathDock-${VERSION}.zip"
+          # ditto 는 Finder 와 동일한 방식으로 압축해 첨부 속성 보존
+          ditto -c -k --sequesterRsrc --keepParent "${{ steps.app.outputs.path }}" "$ZIP"
+          ls -la "$ZIP"
+          echo "name=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.raw }}
+          ZIP: ${{ steps.zip.outputs.name }}
+        run: |
+          # workflow_dispatch 로 실행된 경우 태그가 아직 없을 수 있어 먼저 생성
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG 가 없어 새로 생성합니다."
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+          # 이미 릴리즈가 있으면 자산만 갱신, 없으면 새로 생성하면서 자동 changelog 첨부
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 이 이미 존재 — 자산만 갱신합니다."
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" \
+              --title "$TAG" \
+              --generate-notes
+          fi

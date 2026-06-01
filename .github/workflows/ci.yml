@@ -1,0 +1,44 @@
+name: CI
+
+# master 푸시와 모든 PR 에 대해 빌드 + 단위 회귀를 돌린다.
+# 산출물 배포는 별도 release.yml 이 담당.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & test (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build (Debug, unsigned)
+        run: |
+          xcodebuild \
+            -project TerminalLauncher.xcodeproj \
+            -scheme PathDock \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Standalone unit regression
+        run: swift Tests/run_unit_tests.swift
