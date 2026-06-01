@@ -169,7 +169,12 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 460, minHeight: 360)
+        // 사용자가 자유롭게 리사이즈할 수 있도록 maxWidth/maxHeight 를 .infinity 로 푼다.
+        // (min 만 지정하면 Settings Scene 이 컨텐츠 intrinsic size 에 묶여 고정처럼 보임)
+        .frame(
+            minWidth: 460, idealWidth: 540, maxWidth: .infinity,
+            minHeight: 360, idealHeight: 560, maxHeight: .infinity
+        )
         .onAppear { cloudBackup.refreshAvailability() }
         .sheet(isPresented: $showBackupPasswordSheet) {
             CloudBackupPasswordSheet { password in
