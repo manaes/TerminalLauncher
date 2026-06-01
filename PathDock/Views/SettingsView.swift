@@ -218,9 +218,21 @@ struct SettingsView: View {
                     showBackupPasswordSheet = true
                 }
             } else {
-                infoRow(label: "마지막 백업", value: lastBackupText)
-                Toggle("변경 시 자동 백업", isOn: $preferencesStore.prefs.icloudAutoBackup)
-                    .toggleStyle(.switch)
+                // 마지막 백업 — 카드 타이틀(headline)보다 작게 (caption)
+                HStack {
+                    Text("마지막 백업").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(lastBackupText).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+                // 자동 백업 — 라벨 좌측, 스위치 우측 끝으로 강제 정렬
+                HStack {
+                    Text("변경 시 자동 백업")
+                    Spacer()
+                    Toggle("", isOn: $preferencesStore.prefs.icloudAutoBackup)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+                // 자동 백업 ↔ 액션 버튼들 사이 추가 마진
                 HStack(spacing: 8) {
                     CardActionButton(
                         title: cloudBackup.isBusy ? "백업 중…" : "지금 백업",
@@ -239,6 +251,7 @@ struct SettingsView: View {
                     }
                     .disabled(cloudBackup.isBusy)
                 }
+                .padding(.top, 6)
                 CardActionButton(
                     title: "백업 해제",
                     systemImage: "xmark.circle",
@@ -438,7 +451,7 @@ struct SettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {  // 헤더 ↔ 본문 마진
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
@@ -448,11 +461,11 @@ struct SettingsCard<Content: View>: View {
                     .font(.headline)
                 Spacer()
             }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {  // 본문 내부 요소 간 마진
                 content()
             }
         }
-        .padding(12)
+        .padding(14)
         // 카드가 row 안 가장 큰 카드 높이까지 늘어나도록 maxHeight: .infinity.
         // 컨텐츠는 .topLeading 으로 카드 상단에 붙는다 (가운데 정렬 X).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
