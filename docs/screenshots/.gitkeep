@@ -3,8 +3,6 @@
 # 권장 파일 (README 가 참조하는 이름 — 실제 캡처를 같은 이름으로 저장하세요):
 #   01-main-list.png       메인 윈도우 (항목 리스트 + 툴바)
 #   02-add-entry.png       항목 추가 시트 (타입 Picker / SSH 폼)
-#   03-settings.png        메뉴 → 설정 (터미널/보안/iCloud 백업 섹션)
-#   04-icloud-backup.png   iCloud 백업 섹션 상세 (자동 백업 토글 / 마지막 백업 시각)
-#   05-first-run.png       (옵션) 첫 실행 다이얼로그
+#   03-settings.png        메뉴 → 설정 (카드 그리드)
 #
 # 크기 권장: 너비 1200~1800px, PNG. 윈도우 그림자 포함 캡처는 ⌘⇧4 → Space → 윈도우 클릭.
