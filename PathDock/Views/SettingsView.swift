@@ -34,8 +34,10 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             // 카드 그리드 — 폭에 따라 1~3 컬럼으로 자동 적응 (카드 최소 폭 280).
+            // GridItem alignment: .top → 같은 행 안의 카드들이 가장 큰 카드 높이로 늘어나고,
+            //   짧은 카드는 상단 정렬로 위로 붙는다.
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 280), spacing: 14)],
+                columns: [GridItem(.adaptive(minimum: 280), spacing: 14, alignment: .top)],
                 alignment: .leading,
                 spacing: 14
             ) {
@@ -451,7 +453,9 @@ struct SettingsCard<Content: View>: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        // 카드가 row 안 가장 큰 카드 높이까지 늘어나도록 maxHeight: .infinity.
+        // 컨텐츠는 .topLeading 으로 카드 상단에 붙는다 (가운데 정렬 X).
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
