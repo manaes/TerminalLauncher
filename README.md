@@ -68,6 +68,89 @@ xattr -dr com.apple.quarantine /Applications/PathDock.app
 - **첫 실행 다이얼로그**: "암호화 활성화" 또는 "암호화하지 않기" 중 선택. 한 번 정한 모드는 고정
 - **메뉴 → 설정**: 비밀번호 초기화(전체 데이터 폐기) / Export / Import(`.pathdock` 단일 파일)
 
+## 동작 원리
+
+### 시스템 토폴로지
+
+`Views → Stores → Services → Models → 영속화 API` 의 단방향 4계층 구조이며, 순환 의존이 없다.
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Views (SwiftUI, @MainActor)                                │
+│   ContentView · EntryRow · EntryEditorSheet · SettingsView │
+│   FirstRunSetupView · UnlockView · *PasswordSheet          │
+└───────────────┬────────────────────────────────────────────┘
+                │ @StateObject / 콜백
+                ▼
+┌────────────────────────────────────────────────────────────┐
+│ Stores (@MainActor, @Published 로 뷰 재렌더 트리거)         │
+│   SecurityStore  ── 마스터키/모드/Keychain                  │
+│   EntryStore ──▶ AttachmentStore   (항목 + 첨부 IO)         │
+│   SessionStore (iTerm2 세션 매핑)                           │
+│   PreferencesStore · CloudBackupStore                      │
+└───────────────┬────────────────────────────────────────────┘
+                │ 호출 (Store → Service, 단방향)
+                ▼
+┌────────────────────────────────────────────────────────────┐
+│ Services (대부분 static / nonisolated → 백그라운드 가능)    │
+│   TerminalLauncher · ITermLauncher · RemoteLauncher        │
+│   CryptoService(AES-GCM/PBKDF2/LockedData)                 │
+│   ExportService · ImportService · CloudBackupService       │
+│   SSHConfigParser                                          │
+└───────────────┬────────────────────────────────────────────┘
+                │ 값 타입 입출력
+                ▼
+┌────────────────────────────────────────────────────────────┐
+│ Models (Codable struct/enum)                               │
+│   PathEntry · EntryKind · Attachment · Preferences         │
+│   SecurityConfig · LockedData                              │
+└───────────────┬────────────────────────────────────────────┘
+                ▼
+   FileManager · Keychain · NSAppleScript · NSWorkspace · iCloud
+```
+
+**의존 방향 원칙**
+- 위→아래 단방향. Service 는 Store 를 참조하지 않는다(stateless).
+- Store·View 는 `@MainActor` 로 메인 스레드 보장, Service 는 `nonisolated` 라 KDF/암복호화/첨부 복사를 백그라운드 Task 에서 수행한다.
+- Model 은 모두 불변 `Codable` 값 타입이라 어느 계층에서나 안전하게 주고받는다.
+
+### 데이터 흐름
+
+**① 시작 → 상태 결정** — `PathDockApp` 가 상태머신(`AppPhase`: firstRun / locked / ready)으로 분기한다.
+
+```
+앱 시작 → SecurityStore.config 확인
+  ├─ nil               → .firstRun → FirstRunSetupView (모드·백엔드 선택)
+  ├─ plain             → enterReady(encrypted:false)
+  └─ encrypted
+       ├─ tryAutoUnlock() (Keychain 마스터키 조회, UI 無)
+       │     성공 → enterReady(encrypted:true, key)
+       └─ 실패 → .locked → UnlockView → unlock(pw) → enterReady
+```
+
+`enterReady()` 에서 EntryStore·SessionStore·PreferencesStore·CloudBackupStore 를 생성·`load()` 하고, `validateSessionsOnReady()` 로 죽은 iTerm 세션 매핑을 정리한 뒤 `.ready` 로 전환해 ContentView 를 렌더한다.
+
+**② 항목 더블클릭 → 터미널 실행**
+
+```
+EntryRow(더블클릭) → ContentView.launch(entry)
+  ├─ .command   → TerminalLauncher/ITermLauncher.launch()
+  │     경로 검증 → prepareCommands({{att:uuid}} → 평문 임시경로 치환)
+  │     → buildShellCommand(cd '경로' && cmd1 && cmd2 …)
+  │     → AppleScript 생성 → NSAppleScript 실행 → 새 창
+  ├─ .remoteSSH → launchSSH()
+  │     키파일: 첨부 복호화 → decrypted/<run-uuid>/ 에 평문 + chmod 600 → ssh -i
+  │     패스워드: NSPasteboard 복사 + 안내 echo → ssh user@host -p port
+  └─ .remoteVNC → RemoteLauncher.launchVNC()
+        vnc://[user[:pass]@]host[:port] → NSWorkspace.open
+```
+
+iTerm2 백엔드는 실행 후 `SessionStore.set(entryId, ITermSession)` 으로 세션을 추적하고, ContentView 의 2초 폴링이 `isAlive` 를 확인해 행에 **● 실행 중** 인디케이터를 갱신한다.
+
+**③ 편집 → 저장(디바운스)** — EntryStore 변경은 `@Published` 로 즉시 뷰에 반영되고, `scheduleSave()` 가 **300ms 디바운스** 후 `saveNow()` 를 호출한다. encrypted 모드면 CryptoService 로 AES-GCM 봉인 후 `entries.enc`, plain 모드면 `entries.json` 에 원자적 기록한다.
+
+**④ iCloud 자동 백업** — CloudBackupStore 가 EntryStore 의 `@Published` 를 구독해 변경 시 **5초 디바운스** → 백그라운드 Task 에서 `ExportService.buildManifest` → `sealManifest`(새 솔트 + AES-GCM) → `CloudBackupService.writeBackup`(NSFileCoordinator 원자적 기록)로 `PathDock-backup.pathdock` 을 갱신한다. 복원은 역방향으로 `ImportService.decodeManifest` → `apply(merge|replace)` 이며, 모든 첨부 id·`{{att:uuid}}` 토큰·SSH 키 참조를 새 id 로 remap 한다.
+
 ## 요구 사항
 
 - macOS 13 Ventura 이상
