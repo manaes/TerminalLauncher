@@ -70,43 +70,25 @@ xattr -dr com.apple.quarantine /Applications/PathDock.app
 
 ## 동작 원리
 
-### 시스템 토폴로지
+### 1. 시스템 토폴로지
 
 `Views → Stores → Services → Models → 영속화 API` 의 단방향 4계층 구조이며, 순환 의존이 없다.
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ Views (SwiftUI, @MainActor)                                │
-│   ContentView · EntryRow · EntryEditorSheet · SettingsView │
-│   FirstRunSetupView · UnlockView · *PasswordSheet          │
-└───────────────┬────────────────────────────────────────────┘
-                │ @StateObject / 콜백
-                ▼
-┌────────────────────────────────────────────────────────────┐
-│ Stores (@MainActor, @Published 로 뷰 재렌더 트리거)         │
-│   SecurityStore  ── 마스터키/모드/Keychain                  │
-│   EntryStore ──▶ AttachmentStore   (항목 + 첨부 IO)         │
-│   SessionStore (iTerm2 세션 매핑)                           │
-│   PreferencesStore · CloudBackupStore                      │
-└───────────────┬────────────────────────────────────────────┘
-                │ 호출 (Store → Service, 단방향)
-                ▼
-┌────────────────────────────────────────────────────────────┐
-│ Services (대부분 static / nonisolated → 백그라운드 가능)    │
-│   TerminalLauncher · ITermLauncher · RemoteLauncher        │
-│   CryptoService(AES-GCM/PBKDF2/LockedData)                 │
-│   ExportService · ImportService · CloudBackupService       │
-│   SSHConfigParser                                          │
-└───────────────┬────────────────────────────────────────────┘
-                │ 값 타입 입출력
-                ▼
-┌────────────────────────────────────────────────────────────┐
-│ Models (Codable struct/enum)                               │
-│   PathEntry · EntryKind · Attachment · Preferences         │
-│   SecurityConfig · LockedData                              │
-└───────────────┬────────────────────────────────────────────┘
-                ▼
-   FileManager · Keychain · NSAppleScript · NSWorkspace · iCloud
+```mermaid
+graph TD
+    subgraph App["PathDock.app (SwiftUI · macOS)"]
+        Views["Views (@MainActor)<br/>ContentView · EntryRow · EntryEditorSheet<br/>SettingsView · FirstRun/Unlock · *PasswordSheet"]
+        Stores["Stores (@MainActor · @Published)<br/>SecurityStore · EntryStore → AttachmentStore<br/>SessionStore · PreferencesStore · CloudBackupStore"]
+        Services["Services (static / nonisolated → 백그라운드)<br/>TerminalLauncher · ITermLauncher · RemoteLauncher<br/>CryptoService · Export/Import · CloudBackupService · SSHConfigParser"]
+        Models["Models (Codable struct/enum)<br/>PathEntry · EntryKind · Attachment<br/>Preferences · SecurityConfig · LockedData"]
+    end
+    Persist["FileManager · Keychain<br/>NSAppleScript · NSWorkspace · iCloud"]
+
+    Views -->|"@StateObject / 콜백"| Stores
+    Stores -->|"호출 (단방향)"| Services
+    Services -->|"값 타입 입출력"| Models
+    Stores --> Persist
+    Services --> Persist
 ```
 
 **의존 방향 원칙**
@@ -114,42 +96,54 @@ xattr -dr com.apple.quarantine /Applications/PathDock.app
 - Store·View 는 `@MainActor` 로 메인 스레드 보장, Service 는 `nonisolated` 라 KDF/암복호화/첨부 복사를 백그라운드 Task 에서 수행한다.
 - Model 은 모두 불변 `Codable` 값 타입이라 어느 계층에서나 안전하게 주고받는다.
 
-### 데이터 흐름
+### 2. 시작 → 상태 결정
 
-**① 시작 → 상태 결정** — `PathDockApp` 가 상태머신(`AppPhase`: firstRun / locked / ready)으로 분기한다.
+`PathDockApp` 가 상태머신(`AppPhase`: firstRun / locked / ready)으로 분기한다.
 
-```
-앱 시작 → SecurityStore.config 확인
-  ├─ nil               → .firstRun → FirstRunSetupView (모드·백엔드 선택)
-  ├─ plain             → enterReady(encrypted:false)
-  └─ encrypted
-       ├─ tryAutoUnlock() (Keychain 마스터키 조회, UI 無)
-       │     성공 → enterReady(encrypted:true, key)
-       └─ 실패 → .locked → UnlockView → unlock(pw) → enterReady
-```
-
-`enterReady()` 에서 EntryStore·SessionStore·PreferencesStore·CloudBackupStore 를 생성·`load()` 하고, `validateSessionsOnReady()` 로 죽은 iTerm 세션 매핑을 정리한 뒤 `.ready` 로 전환해 ContentView 를 렌더한다.
-
-**② 항목 더블클릭 → 터미널 실행**
-
-```
-EntryRow(더블클릭) → ContentView.launch(entry)
-  ├─ .command   → TerminalLauncher/ITermLauncher.launch()
-  │     경로 검증 → prepareCommands({{att:uuid}} → 평문 임시경로 치환)
-  │     → buildShellCommand(cd '경로' && cmd1 && cmd2 …)
-  │     → AppleScript 생성 → NSAppleScript 실행 → 새 창
-  ├─ .remoteSSH → launchSSH()
-  │     키파일: 첨부 복호화 → decrypted/<run-uuid>/ 에 평문 + chmod 600 → ssh -i
-  │     패스워드: NSPasteboard 복사 + 안내 echo → ssh user@host -p port
-  └─ .remoteVNC → RemoteLauncher.launchVNC()
-        vnc://[user[:pass]@]host[:port] → NSWorkspace.open
+```mermaid
+flowchart TD
+    Start(["앱 시작"]) --> Cfg{"SecurityStore.config"}
+    Cfg -->|nil| FR["firstRun<br/>FirstRunSetupView (모드·백엔드 선택)"]
+    Cfg -->|plain| Ready
+    Cfg -->|encrypted| Auto{"tryAutoUnlock()<br/>(Keychain, UI 無)"}
+    Auto -->|성공| Ready
+    Auto -->|실패| Lock["locked<br/>UnlockView → unlock(pw)"]
+    FR --> Ready
+    Lock --> Ready
+    Ready["enterReady()<br/>Entry/Session/Preferences/CloudBackup Store load()<br/>+ validateSessionsOnReady() (죽은 세션 정리)"] --> CV(["ContentView 렌더 (.ready)"])
 ```
 
-iTerm2 백엔드는 실행 후 `SessionStore.set(entryId, ITermSession)` 으로 세션을 추적하고, ContentView 의 2초 폴링이 `isAlive` 를 확인해 행에 **● 실행 중** 인디케이터를 갱신한다.
+### 3. 항목 더블클릭 → 터미널 실행
 
-**③ 편집 → 저장(디바운스)** — EntryStore 변경은 `@Published` 로 즉시 뷰에 반영되고, `scheduleSave()` 가 **300ms 디바운스** 후 `saveNow()` 를 호출한다. encrypted 모드면 CryptoService 로 AES-GCM 봉인 후 `entries.enc`, plain 모드면 `entries.json` 에 원자적 기록한다.
+```mermaid
+flowchart TD
+    Row(["EntryRow 더블클릭"]) --> L["ContentView.launch(entry)"]
+    L --> K{"entry.kind"}
+    K -->|.command| Cmd["TerminalLauncher / ITermLauncher.launch()<br/>경로 검증 → prepareCommands ({{att:uuid}} → 평문 임시경로)<br/>→ buildShellCommand (cd '경로' && cmd1 && cmd2 …)<br/>→ AppleScript → NSAppleScript → 새 창"]
+    K -->|.remoteSSH| SSH["launchSSH()<br/>키파일: 첨부 복호화 → decrypted/&lt;run-uuid&gt;/ 평문 + chmod 600 → ssh -i<br/>패스워드: NSPasteboard 복사 + 안내 echo → ssh user@host -p port"]
+    K -->|.remoteVNC| VNC["RemoteLauncher.launchVNC()<br/>vnc://[user[:pass]@]host[:port] → NSWorkspace.open"]
+    Cmd --> Track{"iTerm2 백엔드?"}
+    SSH --> Track
+    Track -->|예| Sess["SessionStore.set(entryId, ITermSession)<br/>ContentView 2초 폴링 isAlive → ● 실행 중 인디케이터"]
+```
 
-**④ iCloud 자동 백업** — CloudBackupStore 가 EntryStore 의 `@Published` 를 구독해 변경 시 **5초 디바운스** → 백그라운드 Task 에서 `ExportService.buildManifest` → `sealManifest`(새 솔트 + AES-GCM) → `CloudBackupService.writeBackup`(NSFileCoordinator 원자적 기록)로 `PathDock-backup.pathdock` 을 갱신한다. 복원은 역방향으로 `ImportService.decodeManifest` → `apply(merge|replace)` 이며, 모든 첨부 id·`{{att:uuid}}` 토큰·SSH 키 참조를 새 id 로 remap 한다.
+### 4. 저장 · iCloud 자동 백업
+
+EntryStore 변경은 `@Published` 로 즉시 뷰에 반영되고, **300ms 디바운스 저장**과 **5초 디바운스 백업**이 각각 분리되어 동작한다.
+
+```mermaid
+flowchart LR
+    Edit(["항목 추가/편집/삭제"]) --> Pub["EntryStore @Published 갱신<br/>(뷰 즉시 재렌더)"]
+    Pub --> Save["scheduleSave() · 300ms 디바운스<br/>→ saveNow()"]
+    Save --> Disk{"모드"}
+    Disk -->|encrypted| Enc["CryptoService AES-GCM 봉인<br/>→ entries.enc (원자적)"]
+    Disk -->|plain| Plain["entries.json (원자적)"]
+    Pub --> Bk["CloudBackupStore 구독 · 5초 디바운스"]
+    Bk --> Seal["ExportService.buildManifest → sealManifest<br/>(새 솔트 + AES-GCM)"]
+    Seal --> Cloud["CloudBackupService.writeBackup<br/>NSFileCoordinator → PathDock-backup.pathdock"]
+```
+
+복원은 역방향으로 `ImportService.decodeManifest` → `apply(merge|replace)` 이며, 모든 첨부 id·`{{att:uuid}}` 토큰·SSH 키 참조를 새 id 로 remap 한다.
 
 ## 요구 사항
 
