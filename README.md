@@ -266,7 +266,6 @@ PathDock 은 두 가지 터미널 백엔드를 지원한다.
 ```
 9_TerminalLauncher/
 ├── README.md
-├── MANUAL_TESTS.md
 ├── TerminalLauncher.xcodeproj/
 ├── Tests/run_unit_tests.swift   # standalone 단위 회귀 (swift Tests/run_unit_tests.swift)
 └── PathDock/
@@ -316,11 +315,11 @@ PathDock 은 두 가지 터미널 백엔드를 지원한다.
 |---|---|
 | 2026-06-something | GitHub Actions 자동 배포 (CI + `v*` 태그 푸시 → 미서명 `.app.zip` 자동 릴리즈) · Apple Silicon 실행 위해 ad-hoc 재서명(`codesign --force --deep --sign -`) 적용 |
 | 2026-06-something | 설정 화면을 카드 그리드로 재구성 · 폭에 따라 1~3 컬럼 자동 적응 · 같은 행 카드 높이 자동 통일 · 위험 영역 카드 분리 |
-| 2026-05-30 | **iCloud 백업/복원** 추가 (전용 컨테이너, 원탭 + 자동) · 복제·Import 시 SSH/VNC 정보 누락 버그 수정 · PBKDF2 백그라운드 오프로딩 · iTerm2 자동 입력 대기 시간 설정화 → 자세히: [핸드오프 문서](docs/2026-05-30-icloud-backup-and-fixes.md) |
+| 2026-05-30 | **iCloud 백업/복원** 추가 (전용 컨테이너, 원탭 + 자동) · 복제·Import 시 SSH/VNC 정보 누락 버그 수정 · PBKDF2 백그라운드 오프로딩 · iTerm2 자동 입력 대기 시간 설정화 |
 | 2026-05-27 | SwiftUI 뷰 평가 도중 `NSAppleScript` 동기 실행으로 인한 재진입 SIGABRT 크래시 수정 |
 | 2026-05-26 | iTerm2 세션 검사 일괄 조회 · SSH 패스워드 전달 백엔드별 캡슐화 |
 
-자세한 내용은 `git log` 또는 [`docs/`](docs/) 의 작업 기록 문서를 참고하라.
+자세한 내용은 `git log` 를 참고하라.
 
 ## 라이선스
 

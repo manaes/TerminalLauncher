@@ -24,6 +24,8 @@ Package.resolved
 .mcp.json
 ruvector.db
 *.db-journal
+*.rvf
+*.rvf.lock
 
 # Editor
 .idea/
