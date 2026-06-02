@@ -119,9 +119,9 @@ flowchart TD
 flowchart TD
     Row(["EntryRow 더블클릭"]) --> L["ContentView.launch(entry)"]
     L --> K{"entry.kind"}
-    K -->|.command| Cmd["TerminalLauncher / ITermLauncher.launch()<br/>경로 검증 → prepareCommands ({{att:uuid}} → 평문 임시경로)<br/>→ buildShellCommand (cd '경로' && cmd1 && cmd2 …)<br/>→ AppleScript → NSAppleScript → 새 창"]
-    K -->|.remoteSSH| SSH["launchSSH()<br/>키파일: 첨부 복호화 → decrypted/&lt;run-uuid&gt;/ 평문 + chmod 600 → ssh -i<br/>패스워드: NSPasteboard 복사 + 안내 echo → ssh user@host -p port"]
-    K -->|.remoteVNC| VNC["RemoteLauncher.launchVNC()<br/>vnc://[user[:pass]@]host[:port] → NSWorkspace.open"]
+    K -->|".command"| Cmd["TerminalLauncher / ITermLauncher.launch()<br/>경로 검증 → prepareCommands ({{att:uuid}} → 평문 임시경로)<br/>→ buildShellCommand (cd '경로' && cmd1 && cmd2 …)<br/>→ AppleScript → NSAppleScript → 새 창"]
+    K -->|".remoteSSH"| SSH["launchSSH()<br/>키파일: 첨부 복호화 → decrypted/&lt;run-uuid&gt;/ 평문 + chmod 600 → ssh -i<br/>패스워드: NSPasteboard 복사 + 안내 echo → ssh user@host -p port"]
+    K -->|".remoteVNC"| VNC["RemoteLauncher.launchVNC()<br/>vnc://[user[:pass]@]host[:port] → NSWorkspace.open"]
     Cmd --> Track{"iTerm2 백엔드?"}
     SSH --> Track
     Track -->|예| Sess["SessionStore.set(entryId, ITermSession)<br/>ContentView 2초 폴링 isAlive → ● 실행 중 인디케이터"]
