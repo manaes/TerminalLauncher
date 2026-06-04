@@ -1233,6 +1233,263 @@ describe("Preferences: 구버전 JSON(새 키 없음) 하위호환 디코드") {
     expectEqual(decoded.icloudAutoBackup, true, "새 자동백업 기본 true")
 }
 
+// MARK: - Mirror: SSHConfigExporter 순수 로직 (PathDock/Services/SSHConfigExporter.swift)
+// 코드를 수정하면 이 미러도 함께 업데이트해야 한다.
+
+enum SSHConfigExporterMirror {
+    struct GeneratedHost {
+        let name: String
+        let hostName: String
+        let blockText: String
+    }
+
+    static func configQuote(_ value: String) -> String {
+        if value.isEmpty { return "\"\"" }
+        if value.contains(where: { $0 == " " || $0 == "\t" }) {
+            let escaped = value.replacingOccurrences(of: "\"", with: "\\\"")
+            return "\"\(escaped)\""
+        }
+        return value
+    }
+
+    static func cleanToken(_ s: String) -> String {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        var out = ""
+        var lastWasDash = false
+        for ch in trimmed {
+            if ch == " " || ch == "\t" {
+                if !lastWasDash && !out.isEmpty { out.append("-"); lastWasDash = true }
+                continue
+            }
+            if ch == "*" || ch == "?" || ch == "#" || ch == "\"" { continue }
+            out.append(ch)
+            lastWasDash = false
+        }
+        while out.hasSuffix("-") { out.removeLast() }
+        return out
+    }
+
+    static func sanitizeHostName(_ raw: String, fallback: String) -> String {
+        let cleaned = cleanToken(raw)
+        if !cleaned.isEmpty { return cleaned }
+        let fb = cleanToken(fallback)
+        return fb.isEmpty ? "pathdock-host" : fb
+    }
+
+    static func renderBlock(name: String, hostName: String, port: Int?, user: String,
+                            identityFile: String?, extras: [String]) -> String {
+        var lines: [String] = ["Host \(name)"]
+        lines.append("    HostName \(configQuote(hostName))")
+        if let p = port, p != 22 { lines.append("    Port \(p)") }
+        if !user.isEmpty { lines.append("    User \(configQuote(user))") }
+        if let key = identityFile, !key.isEmpty {
+            lines.append("    IdentityFile \(configQuote(key))")
+            lines.append("    IdentitiesOnly yes")
+        }
+        for raw in extras {
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            lines.append("    \(trimmed)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    struct RawBlock {
+        var lines: [String]
+        var hostNames: [String]
+        var hostName: String?
+    }
+
+    static func dequote(_ s: String) -> String {
+        guard s.count >= 2, s.hasPrefix("\""), s.hasSuffix("\"") else { return s }
+        return String(s.dropFirst().dropLast())
+    }
+
+    static func keyAndValue(of rawLine: String) -> (String?, String?) {
+        var inQuote = false
+        var stripped = ""
+        for ch in rawLine {
+            if ch == "\"" { inQuote.toggle() }
+            if ch == "#" && !inQuote { break }
+            stripped.append(ch)
+        }
+        let line = stripped.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty { return (nil, nil) }
+        if let eq = line.firstIndex(of: "=") {
+            let firstWS = line.firstIndex { $0 == " " || $0 == "\t" }
+            if firstWS == nil || eq < firstWS! {
+                let key = String(line[..<eq]).trimmingCharacters(in: .whitespaces)
+                let value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+                return (key, dequote(value))
+            }
+        }
+        let parts = line.split(maxSplits: 1, omittingEmptySubsequences: true) { $0 == " " || $0 == "\t" }
+        if parts.count == 2 {
+            return (String(parts[0]), dequote(String(parts[1]).trimmingCharacters(in: .whitespaces)))
+        }
+        return (parts.first.map(String.init), nil)
+    }
+
+    static func parseBlocks(_ text: String) -> (preamble: [String], blocks: [RawBlock]) {
+        var preamble: [String] = []
+        var blocks: [RawBlock] = []
+        var current: RawBlock?
+        for rawLine in text.components(separatedBy: "\n") {
+            let (key, value) = keyAndValue(of: rawLine)
+            if key?.lowercased() == "host" {
+                if let c = current { blocks.append(c) }
+                current = RawBlock(
+                    lines: [rawLine],
+                    hostNames: (value ?? "")
+                        .components(separatedBy: .whitespaces)
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty },
+                    hostName: nil
+                )
+            } else if current == nil {
+                preamble.append(rawLine)
+            } else {
+                current!.lines.append(rawLine)
+                if key?.lowercased() == "hostname", let v = value, !v.isEmpty {
+                    current!.hostName = v
+                }
+            }
+        }
+        if let c = current { blocks.append(c) }
+        return (preamble, blocks)
+    }
+
+    static func trimTrailingBlank(_ lines: [String]) -> [String] {
+        var result = lines
+        while let last = result.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            result.removeLast()
+        }
+        return result
+    }
+
+    static func mergeConfig(existing: String, generated: [GeneratedHost]) -> (text: String, newCount: Int, overwriteCount: Int) {
+        let parsed = parseBlocks(existing)
+        let exportNames = Set(generated.map { $0.name.lowercased() })
+        let exportHostNames = Set(generated.map { $0.hostName.lowercased() })
+
+        func conflicts(_ block: RawBlock) -> Bool {
+            if block.hostNames.contains(where: { exportNames.contains($0.lowercased()) }) { return true }
+            if let hn = block.hostName, exportHostNames.contains(hn.lowercased()) { return true }
+            return false
+        }
+
+        let surviving = parsed.blocks.filter { !conflicts($0) }
+
+        var newCount = 0
+        var overwriteCount = 0
+        for g in generated {
+            let matched = parsed.blocks.contains { block in
+                block.hostNames.contains(where: { $0.lowercased() == g.name.lowercased() })
+                    || (block.hostName.map { $0.lowercased() == g.hostName.lowercased() } ?? false)
+            }
+            if matched { overwriteCount += 1 } else { newCount += 1 }
+        }
+
+        var headLines = parsed.preamble
+        for block in surviving { headLines.append(contentsOf: block.lines) }
+        let head = trimTrailingBlank(headLines).joined(separator: "\n")
+
+        var sections: [String] = []
+        if !head.isEmpty { sections.append(head) }
+        for g in generated { sections.append(g.blockText) }
+        let text = sections.isEmpty ? "" : sections.joined(separator: "\n\n") + "\n"
+        return (text, newCount, overwriteCount)
+    }
+}
+
+// MARK: - SSHConfigExporter: 이름 정규화
+
+describe("SSHConfigExporter: sanitizeHostName") {
+    expectEqual(SSHConfigExporterMirror.sanitizeHostName("My Server", fallback: "1.2.3.4"),
+                "My-Server", "공백은 하이픈으로")
+    expectEqual(SSHConfigExporterMirror.sanitizeHostName("프로젝트  서버", fallback: "h"),
+                "프로젝트-서버", "연속 공백도 하이픈 하나, 유니코드 보존")
+    expectEqual(SSHConfigExporterMirror.sanitizeHostName("a*b?c#d", fallback: "h"),
+                "abcd", "와일드카드/주석 문자 제거")
+    expectEqual(SSHConfigExporterMirror.sanitizeHostName("   ", fallback: "10.0.0.1"),
+                "10.0.0.1", "이름이 비면 주소로 폴백")
+    expectEqual(SSHConfigExporterMirror.sanitizeHostName("name ", fallback: "h"),
+                "name", "끝 공백으로 생긴 트레일링 하이픈 제거")
+}
+
+describe("SSHConfigExporter: configQuote") {
+    expectEqual(SSHConfigExporterMirror.configQuote("simple"), "simple", "공백 없으면 그대로")
+    expectEqual(SSHConfigExporterMirror.configQuote("/Users/a b/key"), "\"/Users/a b/key\"", "공백 있으면 따옴표")
+    expectEqual(SSHConfigExporterMirror.configQuote(""), "\"\"", "빈 값은 빈 따옴표")
+}
+
+// MARK: - SSHConfigExporter: 블록 렌더
+
+describe("SSHConfigExporter: renderBlock 기본") {
+    let block = SSHConfigExporterMirror.renderBlock(
+        name: "web", hostName: "1.2.3.4", port: nil, user: "root", identityFile: nil, extras: [])
+    expectEqual(block, "Host web\n    HostName 1.2.3.4\n    User root", "포트 nil/키 없음 → Port·IdentityFile 생략")
+}
+
+describe("SSHConfigExporter: renderBlock 포트 22 생략, 비표준 포트 명시") {
+    let b22 = SSHConfigExporterMirror.renderBlock(
+        name: "a", hostName: "h", port: 22, user: "", identityFile: nil, extras: [])
+    expectEqual(b22, "Host a\n    HostName h", "포트 22 는 생략, user 비면 생략")
+    let b2222 = SSHConfigExporterMirror.renderBlock(
+        name: "a", hostName: "h", port: 2222, user: "u", identityFile: nil, extras: [])
+    expectEqual(b2222, "Host a\n    HostName h\n    Port 2222\n    User u", "비표준 포트는 명시")
+}
+
+describe("SSHConfigExporter: renderBlock 키파일 + 추가옵션") {
+    let block = SSHConfigExporterMirror.renderBlock(
+        name: "k", hostName: "h", port: nil, user: "u",
+        identityFile: "/Users/me/.ssh/pathdock/k",
+        extras: ["ServerAliveInterval 30", "  ", "HostKeyAlgorithms +ssh-rsa"])
+    expectEqual(block,
+        "Host k\n    HostName h\n    User u\n    IdentityFile /Users/me/.ssh/pathdock/k\n    IdentitiesOnly yes\n    ServerAliveInterval 30\n    HostKeyAlgorithms +ssh-rsa",
+        "키파일이면 IdentitiesOnly yes 추가, 빈 옵션 줄 무시")
+}
+
+// MARK: - SSHConfigExporter: 병합
+
+describe("SSHConfigExporter: 빈 config 에 신규 추가") {
+    let gen = [SSHConfigExporterMirror.GeneratedHost(name: "web", hostName: "1.2.3.4", blockText: "Host web\n    HostName 1.2.3.4")]
+    let r = SSHConfigExporterMirror.mergeConfig(existing: "", generated: gen)
+    expectEqual(r.newCount, 1, "신규 1")
+    expectEqual(r.overwriteCount, 0, "덮어쓰기 0")
+    expectEqual(r.text, "Host web\n    HostName 1.2.3.4\n", "텍스트 = 블록 + 개행")
+}
+
+describe("SSHConfigExporter: 같은 Host 이름이면 덮어쓰기(기존 블록 제거)") {
+    let existing = "Host web\n    HostName old.addr\n    User olduser\n"
+    let gen = [SSHConfigExporterMirror.GeneratedHost(name: "web", hostName: "9.9.9.9", blockText: "Host web\n    HostName 9.9.9.9")]
+    let r = SSHConfigExporterMirror.mergeConfig(existing: existing, generated: gen)
+    expectEqual(r.overwriteCount, 1, "이름 일치 → 덮어쓰기 1")
+    expectEqual(r.newCount, 0, "신규 0")
+    expect(!r.text.contains("old.addr"), "기존 web 블록 제거됨")
+    expect(r.text.contains("HostName 9.9.9.9"), "새 블록 반영")
+}
+
+describe("SSHConfigExporter: 같은 주소(HostName)면 덮어쓰기") {
+    let existing = "Host legacy\n    HostName 1.2.3.4\n"
+    let gen = [SSHConfigExporterMirror.GeneratedHost(name: "newname", hostName: "1.2.3.4", blockText: "Host newname\n    HostName 1.2.3.4")]
+    let r = SSHConfigExporterMirror.mergeConfig(existing: existing, generated: gen)
+    expectEqual(r.overwriteCount, 1, "주소 일치 → 덮어쓰기 1")
+    expect(!r.text.contains("Host legacy"), "기존 legacy 블록 제거됨")
+}
+
+describe("SSHConfigExporter: 충돌 없는 기존 블록/전역설정 보존") {
+    let existing = "# 전역 주석\nServerAliveInterval 60\n\nHost keep\n    HostName keep.addr\n"
+    let gen = [SSHConfigExporterMirror.GeneratedHost(name: "web", hostName: "5.5.5.5", blockText: "Host web\n    HostName 5.5.5.5")]
+    let r = SSHConfigExporterMirror.mergeConfig(existing: existing, generated: gen)
+    expectEqual(r.newCount, 1, "web 은 신규")
+    expectEqual(r.overwriteCount, 0, "충돌 없음")
+    expect(r.text.contains("# 전역 주석"), "전역 주석 보존")
+    expect(r.text.contains("ServerAliveInterval 60"), "전역 설정 보존")
+    expect(r.text.contains("Host keep"), "비충돌 기존 블록 보존")
+    expect(r.text.contains("Host web"), "신규 블록 추가")
+}
+
 // MARK: - 결과 출력
 
 print("")

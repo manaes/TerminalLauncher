@@ -30,6 +30,8 @@ struct SettingsView: View {
     @State private var showBackupPasswordSheet = false
     /// iCloud 복원 모드 선택 다이얼로그 표시 여부
     @State private var showRestoreDialog = false
+    /// SSH config 내보내기 확인 다이얼로그 표시 여부 + 계획 스냅샷
+    @State private var sshExportPlan: SSHConfigExporter.Plan?
 
     var body: some View {
         ScrollView {
@@ -97,6 +99,22 @@ struct SettingsView: View {
             ExportPasswordSheet { password in
                 runExport(password: password)
             }
+        }
+        .confirmationDialog(
+            "SSH config 내보내기",
+            isPresented: Binding(
+                get: { sshExportPlan != nil },
+                set: { if !$0 { sshExportPlan = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: sshExportPlan
+        ) { plan in
+            Button("내보내기", role: plan.overwriteCount > 0 ? .destructive : nil) {
+                runSSHConfigExport()
+            }
+            Button("취소", role: .cancel) { sshExportPlan = nil }
+        } message: { plan in
+            Text(sshExportMessage(plan))
         }
         .sheet(item: Binding(
             get: { pendingImportURL.map { ImportTarget(url: $0) } },
@@ -292,6 +310,17 @@ struct SettingsView: View {
                     runImportPicker()
                 }
             }
+            Divider()
+            Text("SSH 항목을 `~/.ssh/config` 로 내보냅니다. 같은 이름/주소는 덮어쓰고, 키파일은 `~/.ssh/pathdock/` 로 복사 후 IdentityFile 경로를 지정합니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            CardActionButton(
+                title: "SSH config 내보내기…",
+                systemImage: "terminal.fill",
+                tint: .green
+            ) {
+                prepareSSHConfigExport()
+            }
         }
     }
 
@@ -392,6 +421,52 @@ struct SettingsView: View {
             resultMessage = "Export 완료: \(url.path)"
         } catch {
             resultMessage = "Export 실패: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - SSH config 내보내기
+
+    /// 계획을 계산해 확인 다이얼로그를 띄운다. 대상이 없으면 안내만.
+    private func prepareSSHConfigExport() {
+        let plan = SSHConfigExporter.plan(entries: store.entries)
+        guard plan.total > 0 else {
+            resultMessage = "내보낼 SSH 항목이 없습니다."
+            return
+        }
+        sshExportPlan = plan
+    }
+
+    /// 확인 다이얼로그 메시지 본문.
+    private func sshExportMessage(_ plan: SSHConfigExporter.Plan) -> String {
+        var lines = ["대상 SSH 항목: \(plan.total)개"]
+        lines.append("· 신규 추가: \(plan.newCount)개")
+        lines.append("· 덮어쓰기: \(plan.overwriteCount)개")
+        if plan.keyFileCount > 0 {
+            lines.append("· 키파일 복사: \(plan.keyFileCount)개 → ~/.ssh/pathdock/")
+        }
+        lines.append("\n경로: \(plan.configPath)")
+        lines.append("기존 config 는 자동 백업됩니다.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// 실제 내보내기 수행.
+    private func runSSHConfigExport() {
+        sshExportPlan = nil
+        do {
+            let result = try SSHConfigExporter.export(
+                entries: store.entries,
+                attachmentStore: store.attachmentStore
+            )
+            var msg = "SSH config 내보내기 완료.\n신규 \(result.written)개 / 덮어쓰기 \(result.overwritten)개"
+            if result.keyFiles > 0, let dir = result.keyDir {
+                msg += "\n키파일 \(result.keyFiles)개 → \(dir)"
+            }
+            if let backup = result.backupPath {
+                msg += "\n백업: \(backup)"
+            }
+            resultMessage = msg
+        } catch {
+            resultMessage = "SSH config 내보내기 실패: \(error.localizedDescription)"
         }
     }
 
