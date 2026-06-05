@@ -4,7 +4,7 @@
 
 ![PathDock 메인 화면](docs/screenshots/01.png)
 
-> macOS 13+ · Swift / SwiftUI · 개인/사내용 (App Sandbox OFF, Mac App Store 미배포)
+> macOS 13+ · Swift / SwiftUI · Developer ID 서명·공증 · Sparkle 자동 업데이트 · 개인/사내용 (App Sandbox OFF, Mac App Store 미배포)
 
 ## 한눈에
 
@@ -17,27 +17,23 @@
 
 ## 다운로드 / 설치
 
-[**📦 GitHub Releases**](https://github.com/manaes/TerminalLauncher/releases/latest) 페이지에서 최신 `PathDock-x.y.z.zip` 을 받는다. (`v*` 태그 푸시 시 GitHub Actions 가 미서명 빌드를 자동으로 첨부)
+[**📦 GitHub Releases**](https://github.com/manaes/PathDock/releases/latest) 페이지에서 최신 `PathDock-x.y.z.zip` 을 받는다.
 
 1. 다운로드한 zip 을 풀어 `PathDock.app` 을 `/Applications` 폴더로 드래그
-2. 처음 실행할 때 macOS Gatekeeper 가 차단하면 → **시스템 설정 → 개인 정보 보호 및 보안** 하단의 **"그래도 열기"** 를 한 번 누른다 (Developer ID 정식 서명·공증을 적용하기 전까지 미서명 한정)
-3. 첫 실행 다이얼로그에서 **암호화 활성화 / 암호화하지 않기** + **터미널 백엔드(Terminal/iTerm2)** 선택
+2. 첫 실행 다이얼로그에서 **암호화 활성화 / 암호화하지 않기** + **터미널 백엔드(Terminal/iTerm2)** 선택
 
-### 문제 해결 — "응용 프로그램을 열 수 없습니다"
+macOS 빌드는 Apple **Developer ID 로 서명·공증(notarization)** 되어 별도 Gatekeeper 우회 없이 더블클릭으로 바로 실행된다.
 
-Apple Silicon macOS 는 모든 실행 파일에 최소한 **ad-hoc 서명**을 요구한다. v1.0.0 이전 빌드처럼 서명이 완전히 비어있는 경우 "PathDock.app 응용 프로그램을 열 수 없습니다" 로 차단될 수 있다. 다음으로 응급 처치:
+### 자동 업데이트
 
-```bash
-sudo codesign --force --deep --sign - /Applications/PathDock.app
-xattr -dr com.apple.quarantine /Applications/PathDock.app
-```
+앱에 [Sparkle](https://sparkle-project.org) 자동 업데이트가 내장되어 있다. 새 버전이 릴리즈되면 실행 중 자동으로 확인하며, 메뉴 **PathDock → 업데이트 확인…** 으로 수동 확인도 가능하다. 업데이트 패키지는 EdDSA 키로 서명되어 검증 후 설치된다.
 
-> v1.0.1 이상 빌드는 CI 가 ad-hoc 재서명을 자동으로 붙이므로 위 명령은 불필요하다.
+> **iCloud 백업 안내** — 배포(서명·공증) 빌드에는 iCloud 백업이 포함되지 않는다. 관리형 iCloud entitlement 은 프로비저닝 프로파일을 요구하므로 배포 빌드에서 제외했다(설정의 iCloud 백업은 본인 Apple 계정으로 Xcode 에서 직접 빌드·실행할 때만 동작). 암호화 단일 파일(`.pathdock`) Export/Import 백업은 배포 빌드에서도 그대로 사용할 수 있다.
 
 소스에서 직접 빌드하려면 아래 [빌드 및 실행](#빌드-및-실행) 참고. CI 상태:
 
-[![CI](https://github.com/manaes/TerminalLauncher/actions/workflows/ci.yml/badge.svg)](https://github.com/manaes/TerminalLauncher/actions/workflows/ci.yml)
-[![Release](https://github.com/manaes/TerminalLauncher/actions/workflows/release.yml/badge.svg)](https://github.com/manaes/TerminalLauncher/actions/workflows/release.yml)
+[![CI](https://github.com/manaes/PathDock/actions/workflows/ci.yml/badge.svg)](https://github.com/manaes/PathDock/actions/workflows/ci.yml)
+[![Release](https://github.com/manaes/PathDock/actions/workflows/release.yml/badge.svg)](https://github.com/manaes/PathDock/actions/workflows/release.yml)
 
 ## 주요 기능
 
@@ -166,6 +162,27 @@ xcodebuild -project TerminalLauncher.xcodeproj -scheme PathDock -configuration D
 ```
 
 빌드 산출물은 `~/Library/Developer/Xcode/DerivedData/.../Build/Products/Debug/PathDock.app` 에 생성된다. 더블클릭 또는 `open ./PathDock.app` 로 실행.
+
+### 릴리즈 (배포)
+
+`v*` 태그를 푸시하면 [release 워크플로우](.github/workflows/release.yml)가 자동으로 **archive → exportArchive(developer-id) → 공증 → Sparkle 서명 → GitHub Release 첨부**까지 수행한다.
+
+```bash
+git tag v1.0.3
+git push origin v1.0.3
+```
+
+저장소 Settings → Secrets 에 다음 7개가 필요하다(미설정 시 서명·공증·appcast 단계가 실패한다).
+
+| 시크릿 | 내용 |
+|---|---|
+| `APPLE_CERTIFICATE` | Developer ID Application 인증서(.p12)를 base64 인코딩한 값 |
+| `APPLE_CERTIFICATE_PASSWORD` | 위 `.p12` 의 비밀번호 |
+| `APPLE_SIGNING_IDENTITY` | 예: `Developer ID Application: 이름 (XXXXXXXXXX)` |
+| `APPLE_ID` | Apple 계정 이메일 |
+| `APPLE_PASSWORD` | 앱 암호(app-specific password, `xxxx-xxxx-xxxx-xxxx`) |
+| `APPLE_TEAM_ID` | Developer ID 인증서의 팀 ID |
+| `SPARKLE_ED_PRIVATE_KEY` | Sparkle EdDSA 개인키(`generate_keys -x` 로 내보낸 값). 공개키는 `Info.plist` 의 `SUPublicEDKey` 에 포함 |
 
 ## 첫 실행 시 자동화 권한
 
@@ -313,7 +330,7 @@ PathDock 은 두 가지 터미널 백엔드를 지원한다.
 
 | 일자 | 요약 |
 |---|---|
-| 2026-06-something | GitHub Actions 자동 배포 (CI + `v*` 태그 푸시 → 미서명 `.app.zip` 자동 릴리즈) · Apple Silicon 실행 위해 ad-hoc 재서명(`codesign --force --deep --sign -`) 적용 |
+| 2026-06-05 | **Developer ID 서명·공증(notarization)** 적용 · **Sparkle 자동 업데이트** 내장(서명된 appcast) · `v*` 태그 푸시 시 archive→exportArchive(developer-id)→공증→릴리즈 자동화 |
 | 2026-06-something | 설정 화면을 카드 그리드로 재구성 · 폭에 따라 1~3 컬럼 자동 적응 · 같은 행 카드 높이 자동 통일 · 위험 영역 카드 분리 |
 | 2026-05-30 | **iCloud 백업/복원** 추가 (전용 컨테이너, 원탭 + 자동) · 복제·Import 시 SSH/VNC 정보 누락 버그 수정 · PBKDF2 백그라운드 오프로딩 · iTerm2 자동 입력 대기 시간 설정화 |
 | 2026-05-27 | SwiftUI 뷰 평가 도중 `NSAppleScript` 동기 실행으로 인한 재진입 SIGABRT 크래시 수정 |
@@ -327,5 +344,5 @@ PathDock 은 두 가지 터미널 백엔드를 지원한다.
 
 ## 문의 / 이슈
 
-- 깃허브 저장소: [`manaes/TerminalLauncher`](https://github.com/manaes/TerminalLauncher)
+- 깃허브 저장소: [`manaes/PathDock`](https://github.com/manaes/PathDock)
 - 버그 리포트·기능 제안은 위 저장소의 Issues 로
