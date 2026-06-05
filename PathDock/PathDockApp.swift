@@ -36,6 +36,8 @@ struct PathDockApp: App {
     @State private var unlockError: String?
     /// 첫 실행 중 KDF 진행 표시 (활성화 시 spinner)
     @State private var setupWorking = false
+    /// Sparkle 자동 업데이트 컨트롤러. 앱 생명주기 동안 살아있어야 자동 확인 스케줄이 유지된다.
+    @StateObject private var updaterViewModel = UpdaterViewModel()
 
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
@@ -56,6 +58,10 @@ struct PathDockApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) { }
+            // 앱 메뉴(About 아래)에 "업데이트 확인…" 추가
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterViewModel.controller.updater)
+            }
         }
         // ⌘, 단축키로 자동 연결되는 Settings Scene
         // 기본적으로 macOS 의 Settings Scene 윈도우는 styleMask 에서 .resizable 이 빠져

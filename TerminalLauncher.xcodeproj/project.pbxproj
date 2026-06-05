@@ -41,6 +41,8 @@
 		A1000000000000000000FB01 /* CloudBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA01 /* CloudBackupService.swift */; };
 		A1000000000000000000FB02 /* CloudBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA02 /* CloudBackupStore.swift */; };
 		A1000000000000000000FB03 /* CloudBackupPasswordSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000FA03 /* CloudBackupPasswordSheet.swift */; };
+		A200000000000000000000E2 /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000000E1 /* Updater.swift */; };
+		A200000000000000000000F3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A200000000000000000000F2 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -81,6 +83,7 @@
 		A1000000000000000000FA01 /* CloudBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudBackupService.swift; sourceTree = "<group>"; };
 		A1000000000000000000FA02 /* CloudBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudBackupStore.swift; sourceTree = "<group>"; };
 		A1000000000000000000FA03 /* CloudBackupPasswordSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudBackupPasswordSheet.swift; sourceTree = "<group>"; };
+		A200000000000000000000E1 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +91,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A200000000000000000000F3 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,6 +159,7 @@
 				A100000000000000000000F4 /* TerminalAppLauncher.swift */,
 				A100000000000000000000F6 /* ITermLauncher.swift */,
 				A1000000000000000000FA01 /* CloudBackupService.swift */,
+				A200000000000000000000E1 /* Updater.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -209,6 +214,9 @@
 			dependencies = (
 			);
 			name = PathDock;
+			packageProductDependencies = (
+				A200000000000000000000F2 /* Sparkle */,
+			);
 			productName = PathDock;
 			productReference = A100000000000000000000F1 /* PathDock.app */;
 			productType = "com.apple.product-type.application";
@@ -240,6 +248,9 @@
 			productRefGroup = A1000000000000000000A099 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				A200000000000000000000F1 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			targets = (
 				A100000000000000000040F1 /* PathDock */,
 			);
@@ -295,6 +306,7 @@
 				A1000000000000000000FB01 /* CloudBackupService.swift in Sources */,
 				A1000000000000000000FB02 /* CloudBackupStore.swift in Sources */,
 				A1000000000000000000FB03 /* CloudBackupPasswordSheet.swift in Sources */,
+				A200000000000000000000E2 /* Updater.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -492,6 +504,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A200000000000000000000F1 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A200000000000000000000F2 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A200000000000000000000F1 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A100000000000000000020F2 /* Project object */;
 }

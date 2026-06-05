@@ -42,5 +42,11 @@
 			<string>PathDock</string>
 		</dict>
 	</dict>
+	<key>SUFeedURL</key>
+	<string>https://github.com/manaes/PathDock/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>1gMxREtZhVxPGuQSnu/r9XqYLjSSBrHklv6o1PFHk34=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

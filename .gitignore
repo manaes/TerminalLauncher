@@ -14,7 +14,7 @@ xcuserdata/
 .build/
 Packages/
 Package.pins
-Package.resolved
+# Package.resolved 는 앱 의존성 버전 고정(재현 가능한 CI 빌드)을 위해 커밋한다.
 
 # Agent tooling artifacts (not part of the project)
 .claude/
