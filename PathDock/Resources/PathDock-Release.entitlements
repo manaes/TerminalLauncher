@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  배포(Developer ID 서명·공증)용 entitlements.
+	  로컬 Xcode 개발용 PathDock.entitlements 와 달리 iCloud 컨테이너를 제외한다.
+	  (iCloud 관리형 entitlement 은 프로비저닝 프로파일을 요구하므로 배포 빌드에서 생략)
+	  Terminal/iTerm 제어를 위한 자동화(Apple Events) 권한만 유지한다.
+	-->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>
