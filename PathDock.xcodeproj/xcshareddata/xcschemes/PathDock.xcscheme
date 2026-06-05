@@ -17,7 +17,7 @@
                BlueprintIdentifier = "A100000000000000000040F1"
                BuildableName = "PathDock.app"
                BlueprintName = "PathDock"
-               ReferencedContainer = "container:TerminalLauncher.xcodeproj">
+               ReferencedContainer = "container:PathDock.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -47,7 +47,7 @@
             BlueprintIdentifier = "A100000000000000000040F1"
             BuildableName = "PathDock.app"
             BlueprintName = "PathDock"
-            ReferencedContainer = "container:TerminalLauncher.xcodeproj">
+            ReferencedContainer = "container:PathDock.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -64,7 +64,7 @@
             BlueprintIdentifier = "A100000000000000000040F1"
             BuildableName = "PathDock.app"
             BlueprintName = "PathDock"
-            ReferencedContainer = "container:TerminalLauncher.xcodeproj">
+            ReferencedContainer = "container:PathDock.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

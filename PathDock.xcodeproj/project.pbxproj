@@ -236,7 +236,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A1000000000000000000C001 /* Build configuration list for PBXProject "TerminalLauncher" */;
+			buildConfigurationList = A1000000000000000000C001 /* Build configuration list for PBXProject "PathDock" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -485,7 +485,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1000000000000000000C001 /* Build configuration list for PBXProject "TerminalLauncher" */ = {
+		A1000000000000000000C001 /* Build configuration list for PBXProject "PathDock" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A100000000000000000050F1 /* Debug */,

@@ -85,7 +85,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           xcodebuild archive \
-            -project TerminalLauncher.xcodeproj \
+            -project PathDock.xcodeproj \
             -scheme PathDock \
             -configuration Release \
             -destination 'platform=macOS' \

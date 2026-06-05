@@ -151,14 +151,14 @@ flowchart LR
 
 ### Xcode 에서
 
-1. `9_TerminalLauncher/TerminalLauncher.xcodeproj` 더블클릭
+1. `9_PathDock/PathDock.xcodeproj` 더블클릭
 2. 스킴 `PathDock` 선택 후 `⌘R`
 
 ### 커맨드라인
 
 ```bash
-cd path/to/9_TerminalLauncher
-xcodebuild -project TerminalLauncher.xcodeproj -scheme PathDock -configuration Debug build
+cd path/to/9_PathDock
+xcodebuild -project PathDock.xcodeproj -scheme PathDock -configuration Debug build
 ```
 
 빌드 산출물은 `~/Library/Developer/Xcode/DerivedData/.../Build/Products/Debug/PathDock.app` 에 생성된다. 더블클릭 또는 `open ./PathDock.app` 로 실행.
@@ -281,9 +281,9 @@ PathDock 은 두 가지 터미널 백엔드를 지원한다.
 ## 폴더 구조
 
 ```
-9_TerminalLauncher/
+9_PathDock/
 ├── README.md
-├── TerminalLauncher.xcodeproj/
+├── PathDock.xcodeproj/
 ├── Tests/run_unit_tests.swift   # standalone 단위 회귀 (swift Tests/run_unit_tests.swift)
 └── PathDock/
     ├── PathDockApp.swift              # @main, 상태머신 (firstRun / locked / ready)

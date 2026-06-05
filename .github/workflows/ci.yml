@@ -31,7 +31,7 @@ jobs:
       - name: Build (Debug, unsigned)
         run: |
           xcodebuild \
-            -project TerminalLauncher.xcodeproj \
+            -project PathDock.xcodeproj \
             -scheme PathDock \
             -configuration Debug \
             -destination 'platform=macOS' \
