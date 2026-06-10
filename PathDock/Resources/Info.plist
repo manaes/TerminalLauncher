@@ -48,7 +48,8 @@
 	<string>1gMxREtZhVxPGuQSnu/r9XqYLjSSBrHklv6o1PFHk34=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
-	<key>SUAutomaticallyUpdate</key>
-	<true/>
+	<!-- SUAutomaticallyUpdate 는 의도적으로 끔(기본값 NO).
+	     실행 시 백그라운드 확인으로 업데이트를 발견하면 Sparkle 표준 다이얼로그로
+	     사용자에게 설치 여부를 먼저 묻는다 (AIAgentMonitor 와 동일 정책). -->
 </dict>
 </plist>
