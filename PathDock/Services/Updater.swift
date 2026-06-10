@@ -24,6 +24,10 @@ final class UpdaterViewModel: ObservableObject {
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        // 실행 시마다 백그라운드로 1회 즉시 확인한다 (업데이트가 있을 때만 UI 노출).
+        // Sparkle 의 스케줄 체크(기본 24시간 주기)는 만기 시에도 지연 타이머로 돌기 때문에,
+        // 잠깐 띄웠다 닫는 런처 사용 패턴에서는 발동 전에 앱이 종료돼 자동 확인이 사실상 안 된다.
+        controller.updater.checkForUpdatesInBackground()
     }
 }
 

@@ -48,5 +48,7 @@
 	<string>1gMxREtZhVxPGuQSnu/r9XqYLjSSBrHklv6o1PFHk34=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 </dict>
 </plist>
