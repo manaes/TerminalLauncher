@@ -87,7 +87,24 @@ final class EntryStore: ObservableObject {
             self.entries = decoded.sorted { $0.sortIndex < $1.sortIndex }
         } catch {
             NSLog("[PathDock] entries 로드 실패: %@", String(describing: error))
+            // 빈 entries 로 시작한 뒤 항목을 추가하면 디바운스 저장이 이 파일을 덮어쓴다.
+            // 읽지 못한 원본이 유일본일 수 있으므로 .corrupt-<timestamp> 로 치워 보존한다.
+            preserveUnreadableFile(at: url)
             self.entries = []
+        }
+    }
+
+    /// 디코드/복호화에 실패한 entries 파일을 덮어쓰기 전에 별도 이름으로 보존한다.
+    private func preserveUnreadableFile(at url: URL) {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        let backup = url.appendingPathExtension("corrupt-\(f.string(from: Date()))")
+        do {
+            try FileManager.default.moveItem(at: url, to: backup)
+            NSLog("[PathDock] 읽지 못한 entries 파일을 보존: %@", backup.lastPathComponent)
+        } catch {
+            NSLog("[PathDock] entries 손상본 보존 실패: %@", String(describing: error))
         }
     }
 

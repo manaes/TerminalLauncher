@@ -60,11 +60,15 @@ final class AttachmentStore {
         self.encrypted = encrypted
         self.key = key
 
-        // 디렉토리 보장
+        // 디렉토리 보장 (첨부 원본/평문 키가 놓이는 곳이므로 0700)
         let fm = FileManager.default
         for url in [attachmentsDir, decryptedDir] {
             if !fm.fileExists(atPath: url.path) {
-                try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+                try? fm.createDirectory(
+                    at: url,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+                )
             }
         }
     }
@@ -139,6 +143,10 @@ final class AttachmentStore {
     func cleanupDecrypted() {
         let fm = FileManager.default
         try? fm.removeItem(at: decryptedDir)
-        try? fm.createDirectory(at: decryptedDir, withIntermediateDirectories: true)
+        try? fm.createDirectory(
+            at: decryptedDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+        )
     }
 }

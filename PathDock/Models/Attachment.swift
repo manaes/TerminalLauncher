@@ -30,4 +30,17 @@ struct Attachment: Codable, Hashable, Identifiable {
         self.sizeBytes = sizeBytes
         self.addedAt = addedAt
     }
+
+    /// 평문으로 풀 때 디스크 파일명으로 사용할 안전한 이름.
+    /// originalName 은 Import / iCloud 복원 시 외부 `.pathdock` 파일에서 그대로 들어오므로
+    /// `../` 같은 경로 성분이 섞여 있으면 decrypted/ 밖으로 벗어날 수 있다.
+    /// 마지막 경로 성분만 취하고, 비정상 값(빈 문자열 / "." / "..")이면 id 로 대체한다.
+    var safeFileName: String {
+        let base = (originalName as NSString).lastPathComponent
+            .replacingOccurrences(of: "\0", with: "")
+        if base.isEmpty || base == "." || base == ".." {
+            return id.uuidString
+        }
+        return base
+    }
 }

@@ -140,7 +140,11 @@ enum TerminalLauncher {
         }
         let pb = NSPasteboard.general
         pb.clearContents()
+        // org.nspasteboard.ConcealedType: 클립보드 매니저들이 비밀값을 이력에 남기지 않도록 하는 사실상 표준 마킹
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        pb.declareTypes([.string, concealed], owner: nil)
         pb.setString(pw, forType: .string)
+        pb.setString("", forType: concealed)
         return true
     }
 
@@ -176,15 +180,20 @@ enum TerminalLauncher {
             guard let att = entry.attachments.first(where: { $0.id == keyId }) else {
                 throw LaunchError.invalidRemoteConfig("키파일 첨부 메타를 찾을 수 없습니다.")
             }
-            // 이번 실행 전용 디렉토리에 평문 풀기
+            // 이번 실행 전용 디렉토리에 평문 풀기 (평문 키가 풀리는 곳이므로 0700)
             let runId = UUID().uuidString
             let runDir = attachmentStore.decryptedDir.appendingPathComponent(runId, isDirectory: true)
             do {
-                try FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(
+                    at: runDir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+                )
             } catch {
                 throw LaunchError.attachmentExtractionFailed(String(describing: error))
             }
-            let target = runDir.appendingPathComponent(att.originalName)
+            // safeFileName: Import 된 originalName 의 경로 성분(../ 등)을 제거해 runDir 탈출 방지
+            let target = runDir.appendingPathComponent(att.safeFileName)
             do {
                 let data = try attachmentStore.read(id: keyId)
                 try data.write(to: target, options: [.atomic])
@@ -244,6 +253,8 @@ enum TerminalLauncher {
         // 한 줄에 같은 토큰이 여러 번 나올 수 있고, 줄 사이에 같은 uuid 가 재등장할 수 있다.
         // 같은 uuid 는 한 번만 평문으로 풀고 경로를 재사용.
         var resolvedPathById: [UUID: String] = [:]
+        // 서로 다른 첨부가 같은 파일명을 가지면 한 runDir 안에서 덮어쓰므로 이름을 유일화한다.
+        var usedFileNames: Set<String> = []
 
         var output: [String] = []
         for line in entry.commands {
@@ -269,13 +280,23 @@ enum TerminalLauncher {
                 } else {
                     if !runDirCreated {
                         do {
-                            try FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
+                            try FileManager.default.createDirectory(
+                                at: runDir,
+                                withIntermediateDirectories: true,
+                                attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+                            )
                         } catch {
                             throw LaunchError.attachmentExtractionFailed(String(describing: error))
                         }
                         runDirCreated = true
                     }
-                    let target = runDir.appendingPathComponent(att.originalName)
+                    // safeFileName: 경로 성분 제거(runDir 탈출 방지) + 동명 첨부는 uuid 접두어로 유일화
+                    var fileName = att.safeFileName
+                    if usedFileNames.contains(fileName) {
+                        fileName = "\(uuid.uuidString.prefix(8))-\(fileName)"
+                    }
+                    usedFileNames.insert(fileName)
+                    let target = runDir.appendingPathComponent(fileName)
                     do {
                         let data = try attachmentStore.read(id: uuid)
                         try data.write(to: target, options: [.atomic])

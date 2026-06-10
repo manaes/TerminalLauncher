@@ -1490,6 +1490,63 @@ describe("SSHConfigExporter: 충돌 없는 기존 블록/전역설정 보존") {
     expect(r.text.contains("Host web"), "신규 블록 추가")
 }
 
+// MARK: - Mirror: Attachment.safeFileName (PathDock/Models/Attachment.swift)
+
+/// Attachment.safeFileName 의 로직 미러.
+/// Import 된 originalName 의 경로 성분을 제거해 decrypted/ 탈출을 막는다.
+func safeFileNameMirror(originalName: String, id: UUID) -> String {
+    let base = (originalName as NSString).lastPathComponent
+        .replacingOccurrences(of: "\0", with: "")
+    if base.isEmpty || base == "." || base == ".." {
+        return id.uuidString
+    }
+    return base
+}
+
+describe("Attachment.safeFileName — 경로 탈출 방지") {
+    let id = UUID()
+    expectEqual(
+        safeFileNameMirror(originalName: "id_rsa", id: id),
+        "id_rsa",
+        "일반 파일명은 그대로"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: "한글 파일.txt", id: id),
+        "한글 파일.txt",
+        "공백/유니코드 파일명은 그대로"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: "../../../Users/x/.ssh/authorized_keys", id: id),
+        "authorized_keys",
+        "상대 경로 성분은 마지막 성분만 취함"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: "/etc/passwd", id: id),
+        "passwd",
+        "절대 경로도 마지막 성분만 취함"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: "..", id: id),
+        id.uuidString,
+        "'..' 단독은 id 로 대체"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: "", id: id),
+        id.uuidString,
+        "빈 문자열은 id 로 대체"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: "a/..", id: id),
+        id.uuidString,
+        "lastPathComponent 가 '..' 이 되는 경우도 id 로 대체"
+    )
+    expectEqual(
+        safeFileNameMirror(originalName: ".env", id: id),
+        ".env",
+        "점으로 시작하는 정상 파일명은 허용"
+    )
+}
+
 // MARK: - 결과 출력
 
 print("")
