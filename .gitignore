@@ -30,3 +30,7 @@ ruvector.db
 # Editor
 .idea/
 .vscode/
+
+# Added by code-review-graph
+.code-review-graph/
+.code-review-graphignore
